@@ -6,7 +6,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Alert, Share } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { DesignTheme, ThemeCollection } from '@/types/theme-recommendation';
 import { STORAGE_KEYS, ERROR_MESSAGES } from '@/config/themeRecommend.config';
 import { generateCollectionHTML, showErrorAlert } from '@/utils/themeRecommendHelpers';

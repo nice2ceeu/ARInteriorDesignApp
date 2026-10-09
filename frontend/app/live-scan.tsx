@@ -92,6 +92,9 @@ export default function LiveScanScreen() {
         onMountError={(error) => console.error('Camera mount error:', error)}
       >
         {/* Top Controls - Modernized */}
+        <View style={{ position: 'absolute', top: 110, left: 16, right: 16, padding: 10, borderRadius: 8, backgroundColor: 'rgba(0,0,0,0.75)' }}>
+          <Text style={{ color: '#fff', fontSize: 12 }}>Demo mapping: dimensions and distances are simulated. Use measured values in AI Design.</Text>
+        </View>
         <View style={styles.topControls}>
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonIcon}>←</Text>

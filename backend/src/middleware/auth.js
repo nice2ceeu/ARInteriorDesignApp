@@ -1,52 +1,20 @@
 /**
  * Authentication middleware
- * Supports JWT tokens and API keys (for backward compatibility)
- * Uses hardcoded users (no MongoDB required)
+ * Accepts signed JWTs through Authorization or X-API-Key.
+ * Uses MongoDB accounts, with local accounts available outside production.
  */
 
 import { findUserById } from '../data/hardcodedUsers.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-
-// Simple JWT verification (fallback if jsonwebtoken not available)
-async function verifyToken(token) {
-  try {
-    // Try to use jsonwebtoken if available
-    const jwt = await import('jsonwebtoken');
-    return jwt.default.verify(token, JWT_SECRET);
-  } catch (error) {
-    // Fallback: simple token verification
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    try {
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-      // Basic expiration check (7 days)
-      if (payload.exp && payload.exp < Date.now() / 1000) {
-        return null;
-      }
-      return payload;
-    } catch {
-      return null;
-    }
-  }
-}
+import { verifyToken } from '../services/tokenService.js';
 
 import User from '../models/User.js';
 import { isMongoDBConnected } from '../db/mongodb.js';
-
-// ... (existing imports)
 
 export async function authenticate(req, res, next) {
   const authHeader = req.headers['authorization'];
   const apiKey = req.headers['x-api-key'];
   const token = authHeader?.replace('Bearer ', '') || apiKey;
-
-  // In development, allow requests without auth
-  if (process.env.NODE_ENV === 'development' && !token) {
-    req.user = { userId: 'dev-user', id: 'dev-user', role: 'user' };
-    return next();
-  }
 
   if (!token) {
     return res.status(401).json({
@@ -63,7 +31,7 @@ export async function authenticate(req, res, next) {
       let user = null;
 
       // 1. Try MongoDB if connected
-      if (isMongoDBConnected()) {
+      if (isMongoDBConnected() && /^[a-f0-9]{24}$/i.test(decoded.userId)) {
         const dbUser = await User.findById(decoded.userId);
         if (dbUser) {
           user = {
@@ -106,8 +74,6 @@ export async function authenticate(req, res, next) {
       return next();
     }
 
-    // ... (rest of function)
-
     // If token is invalid or expired
     console.error('[Auth] Token verification failed (logic flow)');
     return res.status(401).json({
@@ -116,13 +82,6 @@ export async function authenticate(req, res, next) {
     });
   } catch (error) {
     console.error('[Auth] Token verification failed (exception):', error.message);
-
-    // Fallback for development
-    if (process.env.NODE_ENV === 'development') {
-      console.warn('[Auth] Authentication error, allowing in development:', error.message);
-      req.user = { userId: 'dev-user', id: 'dev-user', role: 'user' };
-      return next();
-    }
 
     return res.status(401).json({
       error: 'Unauthorized',
@@ -152,7 +111,7 @@ export async function optionalAuth(req, res, next) {
       let user = null;
 
       // 1. Try MongoDB
-      if (isMongoDBConnected()) {
+      if (isMongoDBConnected() && /^[a-f0-9]{24}$/i.test(decoded.userId)) {
         const dbUser = await User.findById(decoded.userId);
         if (dbUser) {
           user = {

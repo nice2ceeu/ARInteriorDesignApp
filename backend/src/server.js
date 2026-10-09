@@ -28,6 +28,7 @@ import { authenticate } from './middleware/auth.js';
 import aiDesignController from './controllers/aiDesignController.js';
 import ideaRoutes from './routes/ideas.js';
 import trainingRoutes from './routes/training.js';
+import mlRoutes from './routes/ml.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 import { initDatabase } from './db/database.js';
@@ -111,8 +112,9 @@ app.use('/api/v1/images', imageRoutes);
 app.use('/api/v1/designs', designRoutes);
 app.use('/api/v1/ideas', ideaRoutes);
 app.use('/api/v1/training', trainingRoutes);
+app.use('/api/v1/ml', mlRoutes);
 
-// Strict new route requested by user
+// Floor-plan generation endpoint
 app.post('/api/v1/design/generate', authenticate, aiDesignController.generateLayout);
 
 // Root endpoint - serve web view
@@ -135,6 +137,7 @@ app.get('/api', (req, res) => {
       designs: '/api/v1/designs',
       ideas: '/api/v1/ideas',
       training: '/api/v1/training',
+      ml: '/api/v1/ml',
     },
     webView: '/',
   });

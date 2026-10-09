@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import Constants from 'expo-constants';
 
 /**
  * Get the appropriate base URL based on platform and environment
@@ -47,7 +46,7 @@ const getDefaultBaseUrl = (): string => {
 };
 
 const DEFAULT_BASE_URL = getDefaultBaseUrl();
-const API_KEY_STORAGE_KEYS = ['runtime_backend_api_key', 'runtime_openai_key'];
+const API_KEY_STORAGE_KEYS = ['runtime_backend_api_key'];
 const MAX_RETRIES = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -67,13 +66,11 @@ const getBaseUrl = (): string => {
 
 const getEnvApiKey = () =>
   process.env.EXPO_PUBLIC_LAYOUT_API_KEY ||
-  process.env.EXPO_PUBLIC_API_KEY ||
-  process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  process.env.EXPO_PUBLIC_API_KEY;
 
 const getEnvBearer = () =>
   process.env.EXPO_PUBLIC_LAYOUT_BEARER_TOKEN ||
-  process.env.EXPO_PUBLIC_BEARER_TOKEN ||
-  process.env.EXPO_PUBLIC_OPENAI_BEARER;
+  process.env.EXPO_PUBLIC_BEARER_TOKEN;
 
 async function resolveApiKey(): Promise<string | undefined> {
   for (const key of API_KEY_STORAGE_KEYS) {
@@ -97,6 +94,7 @@ interface CallApiOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
   signal?: AbortSignal;
+  maxRetries?: number;
 }
 
 interface ApiErrorDetails {
@@ -118,7 +116,7 @@ class ApiError extends Error {
 
 export async function callApi<T>(
   path: string,
-  { method = 'GET', body, headers = {}, timeoutMs = 15000, signal }: CallApiOptions = {}
+  { method = 'GET', body, headers = {}, timeoutMs = 15000, signal, maxRetries = MAX_RETRIES }: CallApiOptions = {}
 ): Promise<T> {
   const baseUrl = getBaseUrl().replace(/\/+$/, '');
   const url = `${baseUrl}${path.startsWith('/') ? path : `/${path}`}`;
@@ -147,7 +145,8 @@ export async function callApi<T>(
   let lastError: Error | ApiError = new Error('Max retries exceeded');
 
 
-  while (attempt <= MAX_RETRIES) {
+  const retryLimit = Number.isFinite(maxRetries) ? Math.max(0, Math.min(MAX_RETRIES, Math.floor(maxRetries))) : MAX_RETRIES;
+  while (attempt <= retryLimit) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -176,7 +175,7 @@ export async function callApi<T>(
       }
 
       // handle retryable errors
-      if ((response.status === 429 || response.status >= 500) && attempt < MAX_RETRIES) {
+      if ((response.status === 429 || response.status >= 500) && attempt < retryLimit) {
         const retryAfterHeader = response.headers.get('Retry-After');
         const retryAfter = retryAfterHeader ? parseFloat(retryAfterHeader) * 1000 : undefined;
         const delay = retryAfter && !Number.isNaN(retryAfter)
@@ -215,7 +214,7 @@ export async function callApi<T>(
          lastError.message?.includes('connection timed out') ||
          lastError.message?.includes('ETIMEDOUT'));
 
-      if ((isAbort || isNetwork) && attempt < MAX_RETRIES) {
+      if ((isAbort || isNetwork) && attempt < retryLimit) {
         await sleep(2 ** attempt * 500);
         attempt += 1;
         continue;

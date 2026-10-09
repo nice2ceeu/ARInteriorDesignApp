@@ -4,7 +4,7 @@
  */
 
 import { Share } from 'react-native';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import type { RoomData, SpatialMappingResult } from '@/types/spatial-mapping';
 import type { ScanStats } from '@/types/spatial-mapping-ui';
 import { 

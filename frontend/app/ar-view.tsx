@@ -30,7 +30,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { GLView } from 'expo-gl';
 import * as THREE from 'three';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { RoomData, SpatialPoint } from '@/types/spatial-mapping';
 // Redundant imports removed

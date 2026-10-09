@@ -4,7 +4,7 @@
  */
 
 import * as THREE from 'three';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { Share } from 'react-native';
 import type { 
   RoomDimensions, 

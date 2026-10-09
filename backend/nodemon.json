@@ -1,0 +1,6 @@
+{
+  "watch": ["src", ".env"],
+  "ext": "js,json,env",
+  "ignore": ["data/**", "coverage/**", "node_modules/**"],
+  "delay": "300ms"
+}

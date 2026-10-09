@@ -16,6 +16,8 @@ export interface DesignPreferences {
   };
   functionalRequirements: string[]; // 'home office', 'entertainment', 'relaxation'
   userPrompt?: string;
+  requiredFurniture?: string[];
+  budgetPHP?: number;
 }
 
 // Constraint Parameters
@@ -83,6 +85,8 @@ export interface FurnitureItem {
     high: number;
   };
   zIndex: number; // for layering
+  modelUrl?: string;
+  priceSource?: string;
 }
 
 // Generated Layout
@@ -133,6 +137,7 @@ export interface DesignProposal {
   pros: string[];
   cons: string[];
   rank: number; // 1 = best
+  currency?: 'PHP';
 }
 
 // Simulation Options
@@ -159,7 +164,11 @@ export interface GenerativeDesignOutput {
     totalProposalsGenerated: number;
     processingTime: number; // milliseconds
     algorithm: string;
-    confidenceScore: number; // 0-1
+    confidenceScore: number | null; // null until model confidence is evaluated
+    rankingSource?: 'geometric' | 'xgboost';
+    modelVersion?: string | null;
+    currency?: string;
+    warnings?: string[];
   };
   exportData: {
     json: string;

@@ -10,7 +10,7 @@
  */
 
 import * as THREE from 'three';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { FurnitureLibraryItem } from '@/types/ar-view';
 

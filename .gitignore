@@ -49,3 +49,10 @@ coverage/
 *.temp
 .cache/
 
+# Local Python runtime, environments and model artifacts
+.tools/
+.venv/
+__pycache__/
+*.pyc
+ml-service/models/
+

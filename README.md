@@ -2,6 +2,14 @@
 
 A comprehensive AR-based interior design application that allows users to visualize furniture and design elements in their real-world space using augmented reality.
 
+## Local AI/ML conversion
+
+The design flow now uses an Express constraint-based placement engine with a private Python service for pretrained OWLv2 room-object detection and a client-trained XGBoost layout ranker. Gemini is no longer used by runtime controllers. When no trained ranker is configured, generation uses geometric scoring and reports that mode explicitly.
+
+The client dataset is not available yet. Built-in furniture dimensions and PHP prices are examples; supply the client catalog before relying on estimates. Detection produces 2D image boxes; accurate spatial mapping and stable AR anchors still need native AR integration.
+
+See [ML service setup, catalog schema and ranker training](ml-service/README.md). Start Python separately from `npm run dev`. Copy `backend/.env.example` and `frontend/.env.example` into their respective `.env` files, and use your computer's LAN IP in the frontend API URLs when testing on a phone.
+
 ## 📁 Project Structure
 
 ```
@@ -36,7 +44,7 @@ ARInteriorDesignApp/
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
+- Node.js 22.8 or higher (Node 24 recommended for the current test scripts)
 - npm or yarn
 - Expo CLI
 - MongoDB (for backend)
@@ -108,6 +116,7 @@ npm run dev
 - Express.js
 - MongoDB
 - RESTful API
+- Private Python/FastAPI service for OWLv2 detection and XGBoost layout ranking
 
 ## 📚 Documentation
 

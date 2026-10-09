@@ -1,0 +1,24 @@
+{
+  "furniture": [
+    {
+      "id": "client-chair-001",
+      "type": "chair",
+      "name": "Study Chair",
+      "category": "seating",
+      "roomTypes": ["Bedroom", "Office"],
+      "dimensions": { "width": 0.5, "length": 0.5, "height": 0.9 },
+      "pricePHP": 1800,
+      "modelUrl": "https://YOUR_ASSET_HOST/models/chair.glb"
+    },
+    {
+      "id": "client-desk-001",
+      "type": "desk",
+      "name": "Study Desk",
+      "category": "table",
+      "roomTypes": ["Bedroom", "Office"],
+      "dimensions": { "width": 1.2, "length": 0.6, "height": 0.75 },
+      "pricePHP": 4500,
+      "modelUrl": "https://YOUR_ASSET_HOST/models/desk.glb"
+    }
+  ]
+}

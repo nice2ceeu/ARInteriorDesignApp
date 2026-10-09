@@ -8,7 +8,7 @@
  */
 
 import dotenv from 'dotenv';
-import geminiService from '../services/geminiService.js';
+
 dotenv.config();
 
 // ============================================================================
@@ -22,7 +22,7 @@ const MAX_RETRIES = 2;
 // Get Pexels API key from environment
 const getPexelsApiKey = () => {
   // Pexels API key for theme recommendation
-  const pexelsKey = process.env.PEXELS_API_KEY || process.env.THEME_RECOMMENDATION_API_KEY || 'OdfpmqRFbKh3StVE19NieMW9QYAhDuQWSftDvYd0rPQRBMowMAjILJ9O';
+  const pexelsKey = process.env.PEXELS_API_KEY || process.env.THEME_RECOMMENDATION_API_KEY;
   if (pexelsKey && pexelsKey.trim().length > 20) {
     console.log('[ImageGeneration] Using Pexels API key');
     return pexelsKey.trim();
@@ -135,40 +135,7 @@ export async function generateDesignImage(req, res, next) {
     const searchQuery = buildSearchQuery(proposal, preferences);
     console.log(`[ImageGeneration] Request for: ${proposal.title || 'Untitled'}`);
 
-    // Track if we successfully used Gemini
-    let resultImage = null;
-
-    // 1. Attempt Gemini Image Generation if configured
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        console.log('[ImageGeneration] Attempting Gemini image flow...');
-        const geminiResult = await geminiService.generateImage(proposal, preferences);
-
-        if (geminiResult && geminiResult.type === 'generated') {
-          console.log('[ImageGeneration] ✅ Gemini generated image successfully');
-          return res.json({
-            success: true,
-            imageUrl: geminiResult.data,
-            thumbnailUrl: geminiResult.data,
-            prompt: geminiResult.prompt,
-            generatedAt: Date.now(),
-            attribution: {
-              source: 'Gemini AI (Imagen 4)',
-            },
-          });
-        }
-
-        if (geminiResult && geminiResult.type === 'prompt-only') {
-          console.log('[ImageGeneration] 🔄 Using Gemini-enhanced prompt for search fallback');
-          const enhancedSearchQuery = geminiResult.prompt.substring(0, 150);
-          return await performPexelsSearch(enhancedSearchQuery, proposal, res);
-        }
-      } catch (geminiError) {
-        console.warn('[ImageGeneration] Gemini flow failed, falling back to Pexels:', geminiError.message);
-      }
-    }
-
-    // 2. Fallback to standard Pexels Search
+    // Optional inspiration-photo search; not generative image inference.
     return await performPexelsSearch(searchQuery, proposal, res);
   } catch (error) {
     console.error('[ImageGeneration] Error:', error);
@@ -285,8 +252,8 @@ async function performPexelsSearch(query, proposal, res) {
  */
 export async function checkServiceStatus(req, res) {
   res.json({
-    available: !!apiKey || !!process.env.GEMINI_API_KEY,
-    model: process.env.GEMINI_API_KEY ? 'gemini-imagen-3' : 'pexels-search',
+    available: !!apiKey,
+    model: 'pexels-search',
     maxPromptLength: 1000,
     supportedSizes: ['1024x1024', 'large', 'medium'],
     supportedQualities: ['hd', 'standard', 'original'],

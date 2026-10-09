@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -24,6 +23,7 @@ import Animated, {
 import { callApi } from '@/services/apiClient';
 import FloorPlan2D, { FurnitureItem } from '@/components/FloorPlan2D';
 import { useTheme } from '@/contexts/ThemeContext';
+import RoomDetectionCard from '@/components/RoomDetectionCard';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -32,7 +32,11 @@ interface GeneratedLayout {
   furniture: FurnitureItem[];
   safety_warnings: string[];
   score: number;
+  estimatedCostPHP: number;
+  rankingSource: 'geometric' | 'xgboost';
 }
+
+interface CatalogItem { id: string; type: string; name: string; pricePHP: number }
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -68,6 +72,23 @@ export default function AIDesignModule() {
   // ── Step 2: Preferences ──
   const [roomType, setRoomType] = useState('');
   const [style, setStyle] = useState('');
+  const [budgetInput, setBudgetInput] = useState('30000');
+  const [catalog, setCatalog] = useState<CatalogItem[]>([]);
+  const [requiredFurniture, setRequiredFurniture] = useState<string[]>([]);
+  const [detectedLabels, setDetectedLabels] = useState<string[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    setRequiredFurniture([]);
+    setCatalog([]);
+    setCatalogError(null);
+    if (roomType) {
+      callApi<{ furniture: CatalogItem[] }>(`/designs/furniture/${encodeURIComponent(roomType)}`)
+        .then(response => { if (active) setCatalog(response.furniture); })
+        .catch(() => { if (active) setCatalogError('Furniture options are unavailable. Check the backend connection.'); });
+    }
+    return () => { active = false; };
+  }, [roomType]);
 
   // ── Step 4: Results ──
   const [layouts, setLayouts] = useState<GeneratedLayout[]>([]);
@@ -86,7 +107,7 @@ export default function AIDesignModule() {
         true
       );
     }
-  }, [step]);
+  }, [step, opacity]);
   const shimmerStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   // ── Computed values ──
@@ -95,7 +116,7 @@ export default function AIDesignModule() {
   const roomHeight = parseFloat(heightInput) || 0;
   const availableFloorSpace = parseFloat((roomWidth * roomDepth * 0.75).toFixed(1));
   const isStep1Valid = roomWidth > 0 && roomDepth > 0 && roomHeight > 0;
-  const isStep2Valid = roomType !== '' && style !== '';
+  const isStep2Valid = roomType !== '' && style !== '' && Number.isFinite(Number(budgetInput)) && Number(budgetInput) > 0;
 
   // ── Toggle obstacle ──
   const toggleObstacle = useCallback((value: string) => {
@@ -108,16 +129,16 @@ export default function AIDesignModule() {
   const handleGenerate = async () => {
     setStep(3);
     try {
-      const token = await AsyncStorage.getItem('auth_token');
       const response = await callApi<GeneratedLayout[]>('/design/generate', {
         method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: {
           roomDimensions: { width: roomWidth, height: roomHeight, depth: roomDepth },
-          detectedObstacles: selectedObstacles,
+          detectedObstacles: [...new Set([...selectedObstacles, ...detectedLabels])],
           availableFloorSpace,
           roomType,
           style,
+          budgetPHP: Number(budgetInput),
+          requiredFurniture,
         },
       });
 
@@ -130,7 +151,7 @@ export default function AIDesignModule() {
       }
     } catch (error) {
       console.error('Failed to generate design:', error);
-      Alert.alert('Generation Failed', 'Could not connect to the AI. Make sure your backend is running and the Gemini API key is set.');
+      Alert.alert('Generation Failed', error instanceof Error ? error.message : 'Could not generate layouts. Check your connection and room preferences.');
       setStep(2);
     }
   };
@@ -149,6 +170,7 @@ export default function AIDesignModule() {
       </View>
 
       {/* Dimensions Card */}
+      <RoomDetectionCard onDetected={setDetectedLabels} />
       <View style={[styles.card, { backgroundColor: colors.surfacePrimary, borderColor: colors.border }]}>
         <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Room Dimensions</Text>
 
@@ -292,6 +314,20 @@ export default function AIDesignModule() {
           ))}
         </View>
 
+        <Text style={[styles.label, { color: colors.textPrimary }]}>Maximum furniture budget (PHP)</Text>
+        <TextInput style={[styles.dimensionInput, { color: colors.textPrimary, borderColor: colors.border }]}
+          value={budgetInput} onChangeText={setBudgetInput} keyboardType="decimal-pad" placeholder="30000" />
+        <Text style={[styles.label, { color: colors.textPrimary }]}>Required furniture</Text>
+        {catalogError && <Text style={{ color: colors.textSecondary }}>{catalogError}</Text>}
+        <View style={styles.chipRow}>
+          {catalog.map(item => (
+            <TouchableOpacity key={item.id} style={[styles.chip, { borderColor: colors.border, backgroundColor: requiredFurniture.includes(item.id) ? colors.accent : colors.surfacePrimary }]}
+              onPress={() => setRequiredFurniture(previous => previous.includes(item.id) ? previous.filter(id => id !== item.id) : [...previous, item.id])}>
+              <Text style={[styles.chipText, { color: requiredFurniture.includes(item.id) ? '#fff' : colors.textPrimary }]}>{item.name}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <TouchableOpacity
           style={[styles.primaryButton, !isStep2Valid && styles.primaryButtonDisabled, { marginTop: 24 }]}
           disabled={!isStep2Valid}
@@ -313,7 +349,7 @@ export default function AIDesignModule() {
       <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 24 }} />
       <Text style={[styles.shimmerTitle, { color: colors.textPrimary }]}>Designing your space…</Text>
       <Text style={[styles.shimmerSubtitle, { color: colors.textSecondary }]}>
-        Gemini is generating 3 optimized furniture layouts for your {roomWidth}m × {roomDepth}m room
+        Arranging furniture within your room measurements and budget, then comparing the available layouts.
       </Text>
     </Animated.View>
   );
@@ -326,6 +362,10 @@ export default function AIDesignModule() {
 
     return (
       <View>
+        <View style={[styles.card, { borderColor: colors.border, backgroundColor: colors.surfacePrimary }]}>
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>Estimated furniture cost: ₱{activeLayout.estimatedCostPHP.toLocaleString()}</Text>
+          <Text style={{ color: colors.textSecondary }}>Estimated catalog prices. Confirm current supplier quotations.</Text>
+        </View>
         {/* Summary Banner */}
         <View style={[styles.summaryBanner, { backgroundColor: colors.accent }]}>
           <Text style={styles.summaryBannerText}>

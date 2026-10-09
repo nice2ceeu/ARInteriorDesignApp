@@ -61,9 +61,6 @@ export default () => {
   // Load .env file if it exists (dotenv/config is already imported at top)
   // Environment variables are now available via process.env
   
-  ensureExpoPublicVar('EXPO_PUBLIC_OPENAI_API_KEY', process.env.OPENAI_API_KEY);
-  ensureExpoPublicVar('EXPO_PUBLIC_REPLICATE_API_TOKEN', process.env.REPLICATE_API_TOKEN);
-  
   // API Base URL - prioritize explicit env var, fallback to default
   // For physical devices, set EXPO_PUBLIC_API_BASE_URL=http://YOUR_IP:3000/api/v1
   ensureExpoPublicVar('EXPO_PUBLIC_API_BASE_URL', process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL);
@@ -76,8 +73,6 @@ export default () => {
     ...existingConfig,
     extra: {
       ...existingConfig.expo.extra,
-      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-      REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
       API_BASE_URL: process.env.API_BASE_URL,
     },
   };

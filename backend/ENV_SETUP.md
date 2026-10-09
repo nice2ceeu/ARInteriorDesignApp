@@ -1,83 +1,13 @@
-# Backend Environment Variables Setup
+# Backend environment setup
 
-## Quick Setup
+Copy `.env.example` to `.env` in the backend directory and restart the server. Preserve existing secrets when updating an existing file.
 
-The `.env` file has been created in the `backend/` directory with the following configuration:
+- `PORT`, `NODE_ENV`, `ALLOWED_ORIGINS`: server and browser settings. Native mobile requests do not require CORS origins.
+- `JWT_SECRET`, `JWT_EXPIRES_IN`: authentication. Production requires a private JWT secret; development can use a random startup key.
+- `MONGODB_URI`, `MONGODB_DB_NAME`: account and design-session persistence. Production requires MongoDB; local development accounts are ephemeral without it.
+- `ML_SERVICE_URL`, `ML_TIMEOUT_MS`: private OWLv2/XGBoost inference service (default loopback port 8000).
+- `FURNITURE_CATALOG_PATH`: optional client furniture metadata with meter dimensions, model URLs and PHP prices.
+- `PEXELS_API_KEY` or `THEME_RECOMMENDATION_API_KEY`: optional inspiration-photo search.
+- `SENTRY_DSN`, `SENTRY_ENVIRONMENT`: optional error reporting.
 
-```env
-PORT=3000
-NODE_ENV=development
-PEXELS_API_KEY=OdfpmqRFbKh3StVE19NieMW9QYAhDuQWSftDvYd0rPQRBMowMAjILJ9O
-THEME_RECOMMENDATION_API_KEY=OdfpmqRFbKh3StVE19NieMW9QYAhDuQWSftDvYd0rPQRBMowMAjILJ9O
-ALLOWED_ORIGINS=http://localhost:8081,http://localhost:19006
-```
-
-## Environment Variables Reference
-
-### Required Variables
-
-- **PORT** - Server port (default: 3000)
-- **NODE_ENV** - Environment mode: `development` or `production`
-
-### Pexels API Configuration
-
-- **PEXELS_API_KEY** - Your Pexels API key for image search
-- **THEME_RECOMMENDATION_API_KEY** - Alternative name for Pexels API key
-
-The Pexels API key is already configured and will be used for:
-- Theme recommendation image search
-- Explore tab image search
-- Custom design image generation
-
-### Gemini API Configuration
-
-- **GEMINI_API_KEY** - Your Google Gemini API key for AI design generation
-
-The Gemini API key is already configured and will be used for:
-- AI design prompt analysis
-- Design idea generation
-- Enhanced design descriptions and titles
-- Color palette suggestions
-
-### Optional Variables
-
-- **ALLOWED_ORIGINS** - Comma-separated list of allowed CORS origins
-  - Default: `http://localhost:8081,http://localhost:19006`
-  - Add your device IP if needed: `http://192.168.1.131:19006`
-
-- **OPENAI_API_KEY** - For other AI features (optional)
-
-- **SENTRY_DSN** - Sentry error tracking DSN (optional)
-- **SENTRY_ENVIRONMENT** - Sentry environment name (optional)
-
-- **DATABASE_URL** - MongoDB connection string (if using database)
-
-## Verifying Configuration
-
-After creating/updating `.env`, restart the backend server:
-
-```powershell
-# Stop the server (Ctrl+C)
-# Then start again
-cd backend
-npm start
-```
-
-You should see in the logs:
-```
-[ImageGeneration] Using Pexels API key
-🚀 Server running on port 3000
-```
-
-## Troubleshooting
-
-If the Pexels API isn't working:
-1. Verify the `.env` file exists in `backend/` directory
-2. Check that `PEXELS_API_KEY` is set correctly
-3. Restart the backend server after changing `.env`
-4. Check server logs for `[ImageGeneration] Using Pexels API key`
-
-## Security Note
-
-The `.env` file is in `.gitignore` and should NOT be committed to git.
-Only commit `.env.example` if you want to share a template.
+Gemini/OpenAI credentials are not required by the converted runtime. Keep provider credentials on the server. See [ML setup and training](../ml-service/README.md).

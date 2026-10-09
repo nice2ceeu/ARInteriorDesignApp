@@ -11,47 +11,7 @@ import {
 
 const router = express.Router();
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-
-// Simple JWT implementation (fallback if jsonwebtoken not available)
-async function createToken(payload) {
-  try {
-    // Try to use jsonwebtoken if available
-    const jwt = await import('jsonwebtoken');
-    return jwt.default.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-  } catch (error) {
-    // Fallback: simple token generation
-    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
-    const payloadWithExp = { ...payload, exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60) }; // 7 days
-    const payloadEncoded = Buffer.from(JSON.stringify(payloadWithExp)).toString('base64url');
-    const signature = Buffer.from(`${header}.${payloadEncoded}.${JWT_SECRET}`).toString('base64url');
-    return `${header}.${payloadEncoded}.${signature}`;
-  }
-}
-
-async function verifyToken(token) {
-  try {
-    // Try to use jsonwebtoken if available
-    const jwt = await import('jsonwebtoken');
-    return jwt.default.verify(token, JWT_SECRET);
-  } catch (error) {
-    // Fallback: simple token verification
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    try {
-      const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-      // Check expiration
-      if (payload.exp && payload.exp < Date.now() / 1000) {
-        return null;
-      }
-      return payload;
-    } catch {
-      return null;
-    }
-  }
-}
+import { createToken } from '../services/tokenService.js';
 
 /**
  * POST /api/v1/users/signup

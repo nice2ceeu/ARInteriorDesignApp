@@ -3,7 +3,7 @@
  * Manages design generation state and logic
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Alert } from 'react-native';
 import type { DesignProposal, GenerativeDesignOutput } from '@/types/ai-design';
 import type { BudgetType, OptimizationGoal } from '@/types/ai-design-ui';
@@ -12,7 +12,6 @@ import { saveDesignHistory } from '@/utils/aiDesignStorage';
 import {
   generateDesignProposals,
   trackUserBehavior,
-  trainAIModel
 } from '@/utils/aiDesignBusinessLogic';
 
 interface GenerationParams {
@@ -62,9 +61,8 @@ export function useAIDesignGeneration() {
         prompt: params.prompt,
       });
 
-      // Track user behavior and train AI
+      // Track preferences; custom ranker training uses rated layout datasets offline.
       await trackUserBehavior(params.selectedRoom, params.selectedStyle, params.budget);
-      await trainAIModel();
 
       // Update state
       setGenerationResult(result);

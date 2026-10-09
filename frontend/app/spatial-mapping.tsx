@@ -114,6 +114,9 @@ export default function SpatialMappingScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.content}>
+          <View style={{ padding: 12, marginBottom: 12, borderRadius: 8, backgroundColor: '#FEF3C7' }}>
+            <Text style={{ color: '#92400E' }}>Demo mapping: room measurements are simulated. Enter measured dimensions in AI Design.</Text>
+          </View>
           {/* Scan View */}
           <TouchableOpacity
             style={styles.scanView}

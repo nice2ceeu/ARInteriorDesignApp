@@ -4,11 +4,11 @@
  * 
  * Moved from: frontend/services/IdeaAssistantService.ts
  * 
- * SECURITY: OpenAI API calls are now server-side only
+ * Uses local rules; model inference is provided by the ML service.
  */
 
 import dotenv from 'dotenv';
-import geminiService from '../services/geminiService.js';
+
 
 dotenv.config();
 
@@ -16,9 +16,6 @@ dotenv.config();
 // CONFIGURATION
 // ============================================================================
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const DEFAULT_TIMEOUT = 15000; // 15 seconds
 
 // ============================================================================
 // DEFAULT DIMENSIONS BY ROOM TYPE
@@ -115,133 +112,8 @@ function analyzePromptLocally(prompt) {
 }
 
 // ============================================================================
-// OPENAI PROMPT ANALYSIS
+// LOCAL DESIGN IDEAS
 // ============================================================================
-
-async function analyzePromptWithAI(prompt, userPreferences = null) {
-  if (!OPENAI_API_KEY) {
-    return null;
-  }
-
-  const personalizedContext = userPreferences
-    ? `User's typical preferences: Style: ${userPreferences.preferredStyle || 'none'}, Room: ${userPreferences.preferredRoomType || 'none'}, Budget: ${userPreferences.preferredBudget || 'medium'}. Consider these preferences when analyzing.`
-    : '';
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          {
-            role: 'system',
-            content: `Analyze the interior design prompt. Extract: room type (Living Room/Bedroom/Kitchen/Office/Bathroom/Dining Room), style (Modern/Minimalist/Scandinavian/Industrial/Bohemian/Traditional), suggested dimensions (width×length×height in meters), color palette (3-5 hex colors), and budget level (low/medium/high/luxury). ${personalizedContext} Return JSON only: {"roomType":"...","style":"...","dimensions":{"width":X,"length":Y,"height":Z},"colors":["#hex","..."],"budget":"..."}`,
-          },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.3,
-        max_tokens: 200,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
-      }
-    }
-  } catch (error) {
-    if (error.name === 'AbortError') {
-      console.warn('[IdeaAssistant] AI analysis timeout');
-    } else {
-      console.warn('[IdeaAssistant] AI analysis error:', error.message);
-    }
-  }
-
-  return null;
-}
-
-// ============================================================================
-// IDEA GENERATION
-// ============================================================================
-
-async function generateIdeasWithAI(input) {
-  if (!OPENAI_API_KEY) {
-    return null;
-  }
-
-  const system = `You are an interior design assistant. Produce concise, practical layout ideas. Each idea should contain a clear title and a 2–3 sentence description. Avoid fluff.`;
-  const user = `Room: ${input.roomType}; Style: ${input.designStyle}; Size: ${input.dimensions.width}x${input.dimensions.length}x${input.dimensions.height}m; Budget: ${input.budget}. Extra: ${input.userPrompt || 'n/a'}. Generate 3 distinct ideas with actionable tips.`;
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
-
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        temperature: 0.7,
-        max_tokens: 300,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content || '';
-      return parseIdeasFromText(text);
-    }
-  } catch (error) {
-    console.warn('[IdeaAssistant] Idea generation error:', error.message);
-  }
-
-  return null;
-}
-
-function parseIdeasFromText(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const ideas = [];
-  let current = null;
-
-  for (const line of lines) {
-    const match = /^\d+\.?\s*(.*)/.exec(line) || /^[-•]\s*(.*)/.exec(line);
-    if (match) {
-      if (current) ideas.push(current);
-      current = { title: match[1], description: '' };
-    } else if (current) {
-      current.description += (current.description ? ' ' : '') + line;
-    }
-  }
-  if (current) ideas.push(current);
-
-  return ideas.slice(0, 3).map(i => ({
-    title: i.title.trim().replace(/^[\-•]/, ''),
-    description: i.description.trim(),
-  }));
-}
 
 function generateLocalIdeas(input) {
   const { roomType, designStyle, dimensions, budget } = input;
@@ -283,32 +155,7 @@ export async function analyzePrompt(req, res, next) {
 
     console.log('[IdeaAssistant] Analyzing prompt:', prompt.substring(0, 50) + '...');
 
-    // Try Gemini AI analysis first
-    let suggestions = null;
-    if (GEMINI_API_KEY) {
-      try {
-        suggestions = await geminiService.analyzeDesignPrompt(prompt, userPreferences);
-        if (suggestions) {
-          console.log('[IdeaAssistant] Used Gemini for analysis');
-        }
-      } catch (error) {
-        console.warn('[IdeaAssistant] Gemini analysis failed:', error.message);
-      }
-    }
-
-    // Fall back to OpenAI if Gemini fails
-    if (!suggestions && OPENAI_API_KEY) {
-      suggestions = await analyzePromptWithAI(prompt, userPreferences);
-      if (suggestions) {
-        console.log('[IdeaAssistant] Used OpenAI for analysis');
-      }
-    }
-
-    // Fall back to local analysis
-    if (!suggestions) {
-      suggestions = analyzePromptLocally(prompt);
-      console.log('[IdeaAssistant] Used local analysis');
-    }
+    const suggestions = analyzePromptLocally(prompt);
 
     // Merge with user preferences if available
     if (userPreferences) {
@@ -354,34 +201,7 @@ export async function generateIdeas(req, res, next) {
 
     console.log('[IdeaAssistant] Generating ideas for:', roomType, designStyle);
 
-    // Try Gemini AI generation first
-    let ideas = null;
-    if (GEMINI_API_KEY) {
-      try {
-        ideas = await geminiService.generateDesignIdeas(input);
-        if (ideas && Array.isArray(ideas) && ideas.length > 0) {
-          console.log('[IdeaAssistant] Used Gemini for idea generation');
-        } else {
-          ideas = null;
-        }
-      } catch (error) {
-        console.warn('[IdeaAssistant] Gemini idea generation failed:', error.message);
-      }
-    }
-
-    // Fall back to OpenAI if Gemini fails
-    if ((!ideas || ideas.length === 0) && OPENAI_API_KEY) {
-      ideas = await generateIdeasWithAI(input);
-      if (ideas && ideas.length > 0) {
-        console.log('[IdeaAssistant] Used OpenAI for idea generation');
-      }
-    }
-
-    // Fall back to local ideas
-    if (!ideas || ideas.length === 0) {
-      ideas = generateLocalIdeas(input);
-      console.log('[IdeaAssistant] Used local idea generation');
-    }
+    const ideas = generateLocalIdeas(input);
 
     res.json({ ideas });
   } catch (error) {
@@ -427,7 +247,8 @@ export async function fuseStyles(req, res) {
 export async function checkStatus(req, res) {
   res.json({
     available: true,
-    aiEnabled: !!OPENAI_API_KEY,
+    aiEnabled: false,
+    source: 'rule-based',
     supportedRoomTypes: Object.keys(DEFAULT_DIMENSIONS),
     supportedStyles: Object.keys(STYLE_COLORS),
   });

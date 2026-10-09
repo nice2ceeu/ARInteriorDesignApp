@@ -280,7 +280,7 @@ export default function Layout3DScreen() {
               <InfoRow label="Dimensions" value={`${roomDimensions.width}m × ${roomDimensions.length}m × ${roomDimensions.height}m`} colors={colors} />
               <InfoRow label="Area" value={`${calculateArea(roomDimensions)} m²`} colors={colors} />
               <InfoRow label="Furniture Items" value={`${design.layout.furniture.length} pieces`} colors={colors} />
-              <InfoRow label="Est. Cost" value={`$${design.estimatedCost.low.toLocaleString()} - $${design.estimatedCost.high.toLocaleString()}`} colors={colors} />
+              <InfoRow label="Est. Cost" value={`${design.currency === 'PHP' ? '₱' : '$'}${design.estimatedCost.low.toLocaleString()} - ${design.currency === 'PHP' ? '₱' : '$'}${design.estimatedCost.high.toLocaleString()}`} colors={colors} />
               <InfoRow label="Performance Score" value={`${design.performanceScore.overall.toFixed(0)}/100`} colors={colors} />
             </View>
           </FadeInView>
