@@ -4,6 +4,7 @@
  */
 
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const NOTIFICATION_STORAGE_KEY = 'settings_notifications';
@@ -36,18 +37,25 @@ interface NotificationTrigger {
   [key: string]: unknown; // Allow additional trigger properties
 }
 
-// Lazy load expo-notifications to avoid web issues
+// The package entry point registers push listeners during import. Avoid it in
+// Android Expo Go, where that registration is unsupported even for local use.
 let Notifications: typeof import('expo-notifications') | null = null;
+let notificationsLoading: Promise<typeof import('expo-notifications') | null> | null = null;
 
 const getNotifications = async () => {
-  if (Platform.OS === 'web') {
+  if (Platform.OS === 'web' ||
+      (Platform.OS === 'android' && Constants.executionEnvironment === ExecutionEnvironment.StoreClient)) {
     return null;
   }
-  if (!Notifications) {
+  if (Notifications) return Notifications;
+  if (notificationsLoading) return notificationsLoading;
+  notificationsLoading = (async () => {
     try {
-      Notifications = await import('expo-notifications');
+      // Defer initialization so a component can unmount before attaching listeners.
+      await Promise.resolve();
+      const notifications = require('expo-notifications') as typeof import('expo-notifications');
       // Configure notification behavior only on native platforms
-      Notifications.setNotificationHandler({
+      notifications.setNotificationHandler({
         handleNotification: async () => ({
           shouldShowAlert: true,
           shouldPlaySound: true,
@@ -56,12 +64,18 @@ const getNotifications = async () => {
           shouldShowList: true,
         }),
       });
+      Notifications = notifications;
+      return notifications;
     } catch (error) {
       console.warn('[NotificationService] Failed to load expo-notifications:', error);
       return null;
     }
+  })();
+  try {
+    return await notificationsLoading;
+  } finally {
+    notificationsLoading = null;
   }
-  return Notifications;
 };
 
 export class NotificationService {
@@ -359,28 +373,31 @@ export class NotificationService {
     }
 
     // Native platforms
+    let disposed = false;
+    let receivedListener: { remove(): void } | undefined;
+    let responseListener: { remove(): void } | undefined;
     getNotifications().then((notifications) => {
-      if (!notifications) return;
+      if (!notifications || disposed) return;
 
       // Listener for notifications received while app is foregrounded
-      const receivedListener = notifications.addNotificationReceivedListener((notification) => {
+      receivedListener = notifications.addNotificationReceivedListener((notification) => {
         console.log('[NotificationService] Notification received:', notification);
         onNotificationReceived?.(notification);
       });
 
       // Listener for when user taps on a notification
-      const responseListener = notifications.addNotificationResponseReceivedListener((response) => {
+      responseListener = notifications.addNotificationResponseReceivedListener((response) => {
         console.log('[NotificationService] Notification tapped:', response);
         onNotificationTapped?.(response);
       });
 
-      // Store listeners for cleanup (this is a simplified version)
-      // In a real implementation, you'd want to properly manage these
     });
 
     // Return cleanup function
     return () => {
-      // Cleanup handled by expo-notifications
+      disposed = true;
+      receivedListener?.remove();
+      responseListener?.remove();
     };
   }
 }

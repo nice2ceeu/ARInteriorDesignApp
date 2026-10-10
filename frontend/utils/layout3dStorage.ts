@@ -6,6 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { RoomDimensions, Layout3DProjectData } from '@/types/layout-3d';
 import type { DesignProposal } from '@/types/ai-design';
+import { savedItemsService } from '@/services/SavedItemsService';
 
 const STORAGE_KEYS = {
   PROJECT_PREFIX: 'project_',
@@ -19,8 +20,9 @@ export async function saveProject(
   design: DesignProposal,
   roomDimensions: RoomDimensions
 ): Promise<void> {
+  const projectId = design.id || String(Date.now());
   const projectData: Layout3DProjectData = {
-    id: design.id,
+    id: projectId,
     title: design.title,
     roomDimensions,
     furniture: design.layout?.furniture || [],
@@ -30,8 +32,15 @@ export async function saveProject(
     version: '1.0',
   };
 
-  const storageKey = `${STORAGE_KEYS.PROJECT_PREFIX}${design.id || Date.now()}`;
+  const storageKey = `${STORAGE_KEYS.PROJECT_PREFIX}${projectId}`;
   await AsyncStorage.setItem(storageKey, JSON.stringify(projectData));
+  await savedItemsService.saveItem({
+    id: `layout-project:${projectId}`,
+    name: design.title || 'Room design',
+    type: 'project',
+    iconName: 'cube-outline',
+    metadata: { source: 'layout-3d', design: { ...design, id: projectId }, roomDimensions },
+  });
 }
 
 /**
@@ -94,6 +103,7 @@ export async function getAllProjects(): Promise<Layout3DProjectData[]> {
 export async function deleteProject(projectId: string): Promise<void> {
   const storageKey = `${STORAGE_KEYS.PROJECT_PREFIX}${projectId}`;
   await AsyncStorage.removeItem(storageKey);
+  await savedItemsService.removeSavedItem(`layout-project:${projectId}`);
 }
 
 /**

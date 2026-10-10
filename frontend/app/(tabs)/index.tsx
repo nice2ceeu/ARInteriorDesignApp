@@ -1,7 +1,7 @@
-import { View, StyleSheet, Dimensions, ScrollView, Pressable, Animated } from 'react-native';
+import { View, StyleSheet, Dimensions, ScrollView, Pressable, Animated, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AppText } from '@/components/ui/Text';
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -10,8 +10,45 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { spacing, radii } from '@/components/ui/theme';
 import { AUTH_USER_STORAGE_KEY } from '@/data/authData';
 import { AnimatedButton, AnimatedCard, FadeInView, SlideInView, ScaleInView } from '@/components/interactive';
-import { getHorizontalPadding, isSmallScreen } from '@/utils/responsive';
-import { Platform } from 'react-native';
+import { getHorizontalPadding } from '@/utils/responsive';
+import { projectService } from '@/services/ProjectService';
+import { callApi } from '@/services/apiClient';
+import NotificationService from '@/services/NotificationService';
+import type { Project, RoomType, ProjectStatus } from '@/types/project';
+
+// Room types offered by Create Project; item counts come from the furniture catalog.
+const ROOMS: { type: RoomType; icon: string }[] = [
+  { type: 'Living Room', icon: 'tv' },
+  { type: 'Bedroom', icon: 'bed' },
+  { type: 'Kitchen', icon: 'cafe' },
+  { type: 'Bathroom', icon: 'water' },
+  { type: 'Office', icon: 'briefcase' },
+  { type: 'Dining Room', icon: 'restaurant' },
+  { type: 'Kids Room', icon: 'happy' },
+  { type: 'Outdoor', icon: 'leaf' },
+];
+
+const STATUS_LABELS: Record<ProjectStatus, string> = {
+  draft: 'Draft',
+  'in-progress': 'In progress',
+  completed: 'Completed',
+};
+
+const RECENT_PROJECT_LIMIT = 3;
+
+interface CatalogRoomSummary {
+  source: 'client-catalog' | 'sample-catalog';
+  rooms: { roomType: string; itemCount: number }[];
+}
+
+const formatAge = (timestamp: number) => {
+  const minutes = Math.floor((Date.now() - timestamp) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+};
 
 const { width } = Dimensions.get('window');
 // Responsive card width for 2x2 grid - accounting for padding and gaps
@@ -91,28 +128,75 @@ export default function HomeScreen() {
     loadUserName();
   }, []);
 
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [showAllProjects, setShowAllProjects] = useState(false);
+  const [roomCounts, setRoomCounts] = useState<Record<string, number> | null>(null);
+  const [scheduledNotifications, setScheduledNotifications] = useState<string[]>([]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      projectService.getProjects()
+        .then(list => { if (active) setProjects(list); })
+        .catch(error => console.error('[Home] Failed to load projects:', error));
+      NotificationService.getScheduledNotifications()
+        .then(list => {
+          if (active) setScheduledNotifications(list.map(n => n.content.title || 'Scheduled notification'));
+        });
+      return () => { active = false; };
+    }, [])
+  );
+
+  useEffect(() => {
+    let active = true;
+    // Counts are shown only for the client catalog, never for the built-in sample catalog.
+    callApi<CatalogRoomSummary>('/designs/rooms', { maxRetries: 0 })
+      .then(summary => {
+        if (!active || summary.source !== 'client-catalog') return;
+        setRoomCounts(Object.fromEntries(summary.rooms.map(r => [r.roomType, r.itemCount])));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
   const dismissTip = useCallback(async () => {
     setShowTip(false);
     await AsyncStorage.setItem('hideTip', 'true');
   }, []);
+
+  const showNotifications = useCallback(() => {
+    Alert.alert(
+      'Notifications',
+      scheduledNotifications.length
+        ? scheduledNotifications.map(title => `• ${title}`).join('\n')
+        : 'You have no scheduled notifications.'
+    );
+  }, [scheduledNotifications]);
+
+  const openProject = useCallback((project: Project) => {
+    const final = project.finalDesign;
+    if (final) {
+      // Completed projects reopen their saved design in 3D Layout
+      router.push({
+        pathname: '/layout-3d',
+        params: {
+          designId: final.design.id,
+          designData: JSON.stringify(final.design),
+          roomDimensions: JSON.stringify(final.roomDimensions),
+        },
+      });
+      return;
+    }
+    router.push({ pathname: '/ai-design', params: { projectId: project.id } });
+  }, [router]);
+
+  const visibleProjects = showAllProjects ? projects : projects.slice(0, RECENT_PROJECT_LIMIT);
 
   const actions = [
     { icon: 'sparkles', label: 'AI Design', route: '/ai-design' as Href, color: t.purple },
     { icon: 'color-wand', label: 'Themes', route: '/explore' as Href, color: t.pink },
     { icon: 'scan', label: 'AR View', route: '/ar-furniture' as Href, color: t.accent },
     { icon: 'grid', label: '3D Layout', route: '/layout-3d' as Href, color: t.orange },
-  ];
-
-  const rooms = [
-    { icon: 'tv', name: 'Living', count: 120 },
-    { icon: 'bed', name: 'Bed', count: 85 },
-    { icon: 'cafe', name: 'Kitchen', count: 65 },
-    { icon: 'water', name: 'Bath', count: 40 },
-  ];
-
-  const projects = [
-    { name: 'Modern Loft', time: '2d', progress: 85 },
-    { name: 'Cozy Suite', time: '5d', progress: 60 },
   ];
 
   return (
@@ -142,10 +226,12 @@ export default function HomeScreen() {
                       <Ionicons name={isDark ? 'sunny' : 'moon'} size={20} color={t.textSecondary} />
                     </View>
                   </Button>
-                  <Button activeScale={0.9}>
+                  <Button onPress={showNotifications} activeScale={0.9}>
                     <View style={[styles.headerBtn, { backgroundColor: t.surfacePrimary }]}>
                       <Ionicons name="notifications-outline" size={20} color={t.textSecondary} />
-                      <View style={[styles.dot, { backgroundColor: t.accent }]} />
+                      {scheduledNotifications.length > 0 && (
+                        <View style={[styles.dot, { backgroundColor: t.accent }]} />
+                      )}
                     </View>
                   </Button>
                 </View>
@@ -214,11 +300,6 @@ export default function HomeScreen() {
             <AppText variant="h2" weight="700" style={[styles.sectionTitle, { color: t.textPrimary }]}>
               Rooms
             </AppText>
-            <Button activeScale={0.95}>
-              <AppText variant="body" weight="600" style={[styles.seeAll, { color: t.accent }]}>
-                See all
-              </AppText>
-            </Button>
           </View>
           <ScrollView
             horizontal
@@ -226,24 +307,32 @@ export default function HomeScreen() {
             style={styles.roomsScroll}
             contentContainerStyle={styles.roomsScrollContent}
           >
-            {rooms.map((r, i) => {
+            {ROOMS.map((r, i) => {
               const roomColors = [t.purple, t.pink, t.orange, t.accent];
+              const color = roomColors[i % roomColors.length];
+              const count = roomCounts?.[r.type];
               return (
-                <SlideInView key={r.name} direction="right" delay={i * 100}>
-                  <AnimatedCard style={[styles.roomCard, { backgroundColor: t.surfacePrimary }]} hapticFeedback={true}>
-                    <View style={[styles.roomIconContainer, { backgroundColor: roomColors[i] + '15' }]}>
+                <SlideInView key={r.type} direction="right" delay={i * 100}>
+                  <AnimatedCard
+                    onPress={() => router.push({ pathname: '/create-project', params: { roomType: r.type } })}
+                    style={[styles.roomCard, { backgroundColor: t.surfacePrimary }]}
+                    hapticFeedback={true}
+                  >
+                    <View style={[styles.roomIconContainer, { backgroundColor: color + '15' }]}>
                       <Ionicons
                         name={r.icon as any}
                         size={24}
-                        color={roomColors[i]}
+                        color={color}
                       />
                     </View>
                     <AppText variant="body" weight="600" style={[styles.roomName, { color: t.textPrimary }]}>
-                      {r.name}
+                      {r.type}
                     </AppText>
-                    <AppText variant="caption" style={[styles.roomCount, { color: t.textSecondary }]}>
-                      {r.count}+ items
-                    </AppText>
+                    {count !== undefined && (
+                      <AppText variant="caption" style={[styles.roomCount, { color: t.textSecondary }]}>
+                        {count} {count === 1 ? 'item' : 'items'}
+                      </AppText>
+                    )}
                   </AnimatedCard>
                 </SlideInView>
               );
@@ -255,20 +344,38 @@ export default function HomeScreen() {
             <AppText variant="h2" weight="700" style={[styles.sectionTitle, { color: t.textPrimary }]}>
               Recent Projects
             </AppText>
-            <Button activeScale={0.95}>
-              <AppText variant="body" weight="600" style={[styles.seeAll, { color: t.accent }]}>
-                All
-              </AppText>
-            </Button>
+            {projects.length > RECENT_PROJECT_LIMIT && (
+              <Button onPress={() => setShowAllProjects(v => !v)} activeScale={0.95}>
+                <AppText variant="body" weight="600" style={[styles.seeAll, { color: t.accent }]}>
+                  {showAllProjects ? 'Less' : 'All'}
+                </AppText>
+              </Button>
+            )}
           </View>
           <FadeInView delay={300}>
             <View style={[styles.projectsList, { backgroundColor: t.surfacePrimary }]}>
-              {projects.map((p, i) => (
-                <ScaleInView key={p.name} delay={i * 100}>
+              {visibleProjects.length === 0 && (
+                <Button onPress={() => router.push('/create-project')} style={styles.projectRow}>
+                  <View style={[styles.projectIcon, { backgroundColor: t.surfaceSecondary }]}>
+                    <Ionicons name="folder-open-outline" size={20} color={t.textSecondary} />
+                  </View>
+                  <View style={styles.projectInfo}>
+                    <AppText variant="subtitle" weight="600" style={[styles.projectName, { color: t.textPrimary }]}>
+                      No projects yet
+                    </AppText>
+                    <AppText variant="caption" style={[styles.projectTime, { color: t.textSecondary }]}>
+                      Create a project to see it here
+                    </AppText>
+                  </View>
+                </Button>
+              )}
+              {visibleProjects.map((p, i) => (
+                <ScaleInView key={p.id} delay={i * 100}>
                   <AnimatedCard
+                    onPress={() => openProject(p)}
                     style={[
                       styles.projectRow,
-                      i < projects.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border }
+                      i < visibleProjects.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border }
                     ]}
                     hapticFeedback={true}
                   >
@@ -280,15 +387,13 @@ export default function HomeScreen() {
                         {p.name}
                       </AppText>
                       <AppText variant="caption" style={[styles.projectTime, { color: t.textSecondary }]}>
-                        {p.time} ago
+                        {p.roomType}{p.style ? ` · ${p.style}` : ''}
+                        {p.finalDesign ? ` · ₱${p.finalDesign.estimatedCostPHP.toLocaleString()}` : ''} · {formatAge(p.updatedAt)}
                       </AppText>
                     </View>
-                    <View style={styles.progressWrap}>
-                      <View style={[styles.progressBg, { backgroundColor: t.surfaceSecondary }]}>
-                        <View style={[styles.progressBar, { width: `${p.progress}%`, backgroundColor: t.accent }]} />
-                      </View>
+                    <View style={[styles.statusPill, { backgroundColor: t.surfaceSecondary }]}>
                       <AppText variant="caption" weight="600" style={[styles.progressText, { color: t.textSecondary }]}>
-                        {p.progress}%
+                        {STATUS_LABELS[p.status] ?? p.status}
                       </AppText>
                     </View>
                   </AnimatedCard>
@@ -552,20 +657,10 @@ const styles = StyleSheet.create({
   projectTime: {
     fontSize: 12,
   },
-  progressWrap: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-    minWidth: 60,
-  },
-  progressBg: {
-    width: 60,
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-  },
-  progressBar: {
-    height: '100%',
-    borderRadius: 3,
+  statusPill: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.sm,
   },
   progressText: {
     fontSize: 12,

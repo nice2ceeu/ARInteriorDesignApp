@@ -2,6 +2,8 @@
  * Project types for AR Interior Design App
  */
 
+import type { DesignProposal } from './ai-design';
+
 export type RoomType = 
   | 'Living Room'
   | 'Bedroom'
@@ -48,6 +50,16 @@ export interface Project {
     max: number;
   };
   tags?: string[];
+  finalDesign?: FinalDesign;
+}
+
+/** The layout chosen and saved at the end of the design flow. */
+export interface FinalDesign {
+  design: DesignProposal;
+  roomDimensions: { width: number; length: number; height: number };
+  estimatedCostPHP: number;
+  budgetPHP: number;
+  savedAt: number;
 }
 
 export interface CreateProjectInput {

@@ -110,7 +110,7 @@ export interface Layout3DProjectData {
 export interface Layout3DSceneRefs {
   scene: THREE.Scene | null;
   camera: THREE.PerspectiveCamera | THREE.OrthographicCamera | null;
-  renderer: any | null; // Renderer from expo-three
+  renderer: THREE.WebGLRenderer | null;
   roomGroup: THREE.Group | null;
   furnitureGroup: THREE.Group | null;
   measurementGroup: THREE.Group | null;

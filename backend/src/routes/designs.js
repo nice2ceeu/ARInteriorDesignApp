@@ -20,6 +20,12 @@ router.use(optionalAuth);
 router.post('/generate', aiDesignController.generateDesign);
 
 /**
+ * GET /api/v1/designs/rooms
+ * Room types in the furniture catalog with their item counts
+ */
+router.get('/rooms', aiDesignController.getCatalogRooms);
+
+/**
  * GET /api/v1/designs/furniture/:roomType
  * Get furniture catalog for a room type
  */

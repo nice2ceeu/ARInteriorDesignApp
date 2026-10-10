@@ -20,8 +20,7 @@ export type ScreenName =
   | 'live-scan'
   | 'ar-view'
   | 'layout-3d'
-  | 'create-project'
-  | 'settings';
+  | 'create-project';
 
 // Screen configuration type
 export interface ScreenConfig {
@@ -158,12 +157,6 @@ export const NAVIGATION_SCREENS: Record<string, ScreenConfig[]> = {
   utility: [
     {
       name: 'create-project',
-      options: {
-        ...ANIMATION_PRESETS.card,
-      },
-    },
-    {
-      name: 'settings',
       options: {
         ...ANIMATION_PRESETS.card,
       },

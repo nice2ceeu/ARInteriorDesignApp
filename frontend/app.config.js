@@ -13,6 +13,7 @@ const config = {
     supportsTablet: true,
   },
   android: {
+    package: 'com.arinteriordesign.app',
     adaptiveIcon: {
       backgroundColor: '#ffffff',
     },
@@ -25,10 +26,9 @@ const config = {
     'expo-router',
     'expo-dev-client',
     'expo-font',
-    'expo-image',
     'expo-splash-screen',
     'expo-status-bar',
-    'expo-web-browser',
+    'expo-sharing',
     [
       'expo-camera',
       {

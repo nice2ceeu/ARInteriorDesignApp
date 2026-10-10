@@ -56,11 +56,11 @@ export default function SavedScreen() {
     useCallback(() => {
       const initializeAndLoad = async () => {
         try {
-          // Initialize with sample items if first time
-          const { initializeSavedItems } = await import('@/utils/initializeSavedItems');
-          await initializeSavedItems();
+          // Clear sample items seeded by earlier versions
+          const { removeSampleSavedItems } = await import('@/utils/initializeSavedItems');
+          await removeSampleSavedItems();
         } catch (error) {
-          console.warn('[SavedScreen] Failed to initialize sample items:', error);
+          console.warn('[SavedScreen] Failed to remove sample items:', error);
         }
         // Load saved items
         await loadSavedItems();
@@ -123,7 +123,15 @@ export default function SavedScreen() {
       toggleItemSelection(item.id);
     } else {
       // Navigate to item details based on type
-      if (item.type === 'project') {
+      if (item.metadata?.source === 'layout-3d' && item.metadata.design) {
+        router.push({
+          pathname: '/layout-3d',
+          params: {
+            designData: JSON.stringify(item.metadata.design),
+            roomDimensions: JSON.stringify(item.metadata.roomDimensions),
+          },
+        });
+      } else if (item.type === 'project') {
         router.push(`/create-project?id=${item.id}`);
       } else if (item.type === 'design') {
         router.push(`/ai-design?id=${item.id}`);

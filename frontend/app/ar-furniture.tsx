@@ -3,13 +3,13 @@
  * Main screen for placing and viewing 3D furniture in AR
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { View, StyleSheet, Alert, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { ARFurniturePlacement, ARFurniturePlacementHandle } from '@/components/ARFurniturePlacement';
+import { ARFurniturePlacement, ARFurniturePlacementHandle, type ARLayoutItem } from '@/components/ARFurniturePlacement';
 import { AppText } from '@/components/ui/Text';
 import { colors, spacing, radii } from '@/components/ui/theme';
 import type { ARFurnitureItem } from '@/components/ARFurnitureRenderer';
@@ -38,8 +38,21 @@ const FURNITURE_CATALOG: ARFurnitureItem[] = [
 
 export default function ARFurnitureScreen() {
   const router = useRouter();
+  const { layoutItems: layoutParam } = useLocalSearchParams<{ layoutItems?: string }>();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  
+
+  // A generated layout from AI Design, shown as one arrangement
+  const layoutItems = useMemo<ARLayoutItem[] | null>(() => {
+    if (!layoutParam) return null;
+    try {
+      const parsed = JSON.parse(layoutParam);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }, [layoutParam]);
+  const isLayoutMode = Boolean(layoutItems?.length);
+
   const [selectedFurniture, setSelectedFurniture] = useState<ARFurnitureItem | null>(null);
   const [isARReady, setIsARReady] = useState(false);
   const [isLoadingModel, setIsLoadingModel] = useState(false);
@@ -87,6 +100,7 @@ export default function ARFurnitureScreen() {
         <ARFurniturePlacement
           ref={arPlacementRef}
           furnitureItem={selectedFurniture}
+          layoutItems={layoutItems}
           onLoadingStateChange={setIsLoadingModel}
           onError={(error) => Alert.alert('Error', error)}
         />
@@ -151,7 +165,12 @@ export default function ARFurnitureScreen() {
         <TouchableOpacity 
           style={styles.floatingButton} 
           onPress={() => {
-            if (selectedFurniture) {
+            if (layoutItems?.length) {
+              Alert.alert(
+                'Proposed layout',
+                `${layoutItems.map(item => `• ${item.name}`).join('\n')}\n\nDrag to move the arrangement. It follows the camera view and is not anchored to the floor yet.`
+              );
+            } else if (selectedFurniture) {
               Alert.alert(selectedFurniture.name, `Dimensions: ${selectedFurniture.dimensions.width}m x ${selectedFurniture.dimensions.height}m x ${selectedFurniture.dimensions.depth}m`);
             } else {
               Alert.alert('No Item', 'Please add a furniture item first.');
@@ -160,13 +179,15 @@ export default function ARFurnitureScreen() {
         >
           <Ionicons name="information" size={24} color="#FFF" />
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.floatingButton, styles.mainFloatingButton]} 
-          onPress={() => setShowCatalog(true)}
-        >
-          <Ionicons name="add" size={32} color="#FFF" />
-        </TouchableOpacity>
+
+        {!isLayoutMode && (
+          <TouchableOpacity
+            style={[styles.floatingButton, styles.mainFloatingButton]}
+            onPress={() => setShowCatalog(true)}
+          >
+            <Ionicons name="add" size={32} color="#FFF" />
+          </TouchableOpacity>
+        )}
         
         <TouchableOpacity 
           style={styles.floatingButton} 
@@ -185,7 +206,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
   camera: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 1,
   },
   topNav: {

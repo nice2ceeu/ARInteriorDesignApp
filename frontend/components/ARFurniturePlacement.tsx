@@ -15,6 +15,11 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Shared loader instance
 const modelLoader = new FurnitureModelLoader();
 
+/** A furniture item placed relative to the layout center, in meters. */
+export interface ARLayoutItem extends ARFurnitureItem {
+  offset: { x: number; z: number };
+}
+
 export interface ARFurniturePlacementHandle {
   resetTransform: () => void;
   rotateLeft: () => void;
@@ -23,12 +28,61 @@ export interface ARFurniturePlacementHandle {
 
 interface Props {
   furnitureItem: ARFurnitureItem | null;
+  /** When set, the whole arrangement is placed and moved as one group instead of furnitureItem. */
+  layoutItems?: ARLayoutItem[] | null;
   onLoadingStateChange?: (isLoading: boolean) => void;
   onError?: (error: string) => void;
 }
 
+async function createFurnitureModel(furnitureItem: ARFurnitureItem): Promise<THREE.Object3D | null> {
+  if (furnitureItem.modelUrl) {
+    const model = await modelLoader.loadGLBModel(furnitureItem.modelUrl, 1.0);
+    if (model) {
+      // Normalization
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+
+      // Apply scale
+      const scaleX = furnitureItem.dimensions.width / size.x;
+      const scaleY = furnitureItem.dimensions.height / size.y;
+      const scaleZ = furnitureItem.dimensions.depth / size.z;
+      const uniformScale = Math.min(scaleX, scaleY, scaleZ);
+
+      if (uniformScale > 0 && uniformScale !== Infinity) {
+        model.scale.multiplyScalar(uniformScale);
+      }
+
+      // Center and set bottom to y=0
+      box.setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.sub(center);
+      model.position.y += box.getSize(new THREE.Vector3()).y / 2;
+    }
+    return model;
+  }
+
+  // Use procedural generation instead of loading broken remote models
+  const category = furnitureItem.id.includes('sofa') ? 'seating' :
+                   furnitureItem.id.includes('table') ? 'tables' :
+                   furnitureItem.id.includes('book') ? 'storage' : 'seating';
+
+  return modelLoader.createDetailedFurnitureModel({
+    id: furnitureItem.id,
+    name: furnitureItem.name,
+    category: category,
+    dimensions: {
+      width: furnitureItem.dimensions.width,
+      length: furnitureItem.dimensions.depth,
+      height: furnitureItem.dimensions.height,
+    },
+    price: '', // Required by the library type; not used for rendering
+    color: furnitureItem.color ? '#' + furnitureItem.color.toString(16).padStart(6, '0') : '#808080'
+  });
+}
+
 export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props>(({
   furnitureItem,
+  layoutItems,
   onLoadingStateChange,
   onError
 }, ref) => {
@@ -232,7 +286,10 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
 
   // Load furniture model when item changes
   useEffect(() => {
-    if (!furnitureItem) {
+    const items: ARLayoutItem[] = layoutItems?.length
+      ? layoutItems
+      : furnitureItem ? [{ ...furnitureItem, offset: { x: 0, z: 0 } }] : [];
+    if (!items.length) {
       if (furnitureGroupRef.current) {
          while (furnitureGroupRef.current.children.length > 0) {
            furnitureGroupRef.current.remove(furnitureGroupRef.current.children[0]);
@@ -260,56 +317,25 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
       }
 
       try {
-        let model: THREE.Object3D | null = null;
-        
-        if (furnitureItem.modelUrl) {
-          model = await modelLoader.loadGLBModel(furnitureItem.modelUrl, 1.0);
+        let loadedCount = 0;
+        for (const item of items) {
+          const model = await createFurnitureModel(item);
+          if (!isMounted) return;
           if (model) {
-            // Normalization
-            const box = new THREE.Box3().setFromObject(model);
-            const size = box.getSize(new THREE.Vector3());
-            
-            // Apply scale
-            const scaleX = furnitureItem.dimensions.width / size.x;
-            const scaleY = furnitureItem.dimensions.height / size.y;
-            const scaleZ = furnitureItem.dimensions.depth / size.z;
-            const uniformScale = Math.min(scaleX, scaleY, scaleZ);
-            
-            if (uniformScale > 0 && uniformScale !== Infinity) {
-              model.scale.multiplyScalar(uniformScale);
-            }
-
-            // Center and set bottom to y=0
-            box.setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            model.position.sub(center);
-            model.position.y += box.getSize(new THREE.Vector3()).y / 2;
+            model.position.x += item.offset.x;
+            model.position.z += item.offset.z;
+            furnitureGroupRef.current!.add(model);
+            loadedCount++;
           }
-        } else {
-          // Use procedural generation instead of loading broken remote models
-          const category = furnitureItem.id.includes('sofa') ? 'seating' : 
-                           furnitureItem.id.includes('table') ? 'tables' : 
-                           furnitureItem.id.includes('book') ? 'storage' : 'seating';
-                           
-          model = await modelLoader.createDetailedFurnitureModel({
-            id: furnitureItem.id,
-            name: furnitureItem.name,
-            category: category,
-            dimensions: {
-              width: furnitureItem.dimensions.width,
-              length: furnitureItem.dimensions.depth,
-              height: furnitureItem.dimensions.height,
-              unit: 'm'
-            },
-            color: furnitureItem.color ? '#' + furnitureItem.color.toString(16).padStart(6, '0') : '#808080'
-          });
         }
 
-        if (isMounted && model) {
-          furnitureGroupRef.current!.add(model);
-          shadowMeshRef.current!.visible = true;
+        if (loadedCount > 0) {
+          shadowMeshRef.current!.visible = !layoutItems?.length;
           updateFurnitureTransform();
-        } else if (isMounted) {
+          if (loadedCount < items.length) {
+            onError?.(`${items.length - loadedCount} of ${items.length} items could not be loaded.`);
+          }
+        } else {
           onError?.('Failed to load 3D model.');
           shadowMeshRef.current!.visible = false;
         }
@@ -330,7 +356,7 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
     return () => {
       isMounted = false;
     };
-  }, [furnitureItem]);
+  }, [furnitureItem, layoutItems]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -534,7 +560,7 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
 
 const styles = StyleSheet.create({
   container: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 10,
   },
   glView: {

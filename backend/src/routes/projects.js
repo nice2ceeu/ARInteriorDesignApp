@@ -1,7 +1,7 @@
 import express from 'express';
 import { optionalAuth } from '../middleware/auth.js';
 import { getDatabase } from '../db/database.js';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID as uuidv4 } from 'node:crypto';
 
 const router = express.Router();
 

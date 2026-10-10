@@ -11,7 +11,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import Animated, {
   useSharedValue,
@@ -24,17 +24,17 @@ import { callApi } from '@/services/apiClient';
 import FloorPlan2D, { FurnitureItem } from '@/components/FloorPlan2D';
 import { useTheme } from '@/contexts/ThemeContext';
 import RoomDetectionCard from '@/components/RoomDetectionCard';
+import { projectService } from '@/services/ProjectService';
+import { saveProject } from '@/utils/layout3dStorage';
+import { exportAsPDF, shareExportedFile } from '@/utils/layout3dExport';
+import {
+  toDesignProposal,
+  toARLayoutItems,
+  type GeneratedLayoutResult as GeneratedLayout,
+} from '@/utils/generatedLayout';
+import type { DesignStyle, FinalDesign, RoomType } from '@/types/project';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface GeneratedLayout {
-  id: string;
-  furniture: FurnitureItem[];
-  safety_warnings: string[];
-  score: number;
-  estimatedCostPHP: number;
-  rankingSource: 'geometric' | 'xgboost';
-}
 
 interface CatalogItem { id: string; type: string; name: string; pricePHP: number }
 
@@ -58,6 +58,10 @@ const STYLE_OPTIONS = ['Minimalist', 'Modern', 'Traditional', 'Scandinavian', 'I
 
 export default function AIDesignModule() {
   const router = useRouter();
+  const { projectId, roomDimensions: scannedDimensions } = useLocalSearchParams<{
+    projectId?: string;
+    roomDimensions?: string;
+  }>();
   const { colors, statusBarStyle } = useTheme();
 
   // Step: 1=Room Input, 2=Preferences, 3=Loading, 4=Results
@@ -89,6 +93,39 @@ export default function AIDesignModule() {
     }
     return () => { active = false; };
   }, [roomType]);
+
+  // ── Prefill from a saved project ──
+  useEffect(() => {
+    if (!projectId) return;
+    let active = true;
+    projectService.getProjectById(projectId).then(project => {
+      if (!active || !project) return;
+      if (project.dimensions) {
+        setWidthInput(String(project.dimensions.width));
+        setDepthInput(String(project.dimensions.length));
+        setHeightInput(String(project.dimensions.height));
+      }
+      const projectRoom = project.roomType === 'Dining Room' ? 'Dining Area' : project.roomType;
+      if (ROOM_TYPES.includes(projectRoom)) setRoomType(projectRoom);
+      if (project.style && STYLE_OPTIONS.includes(project.style)) setStyle(project.style);
+    });
+    return () => { active = false; };
+  }, [projectId]);
+
+  // ── Prefill from Spatial Mapping ──
+  useEffect(() => {
+    if (!scannedDimensions) return;
+    try {
+      const { width, length, height } = JSON.parse(scannedDimensions);
+      if ([width, length, height].every(value => Number.isFinite(value) && value > 0)) {
+        setWidthInput(String(width));
+        setDepthInput(String(length));
+        setHeightInput(String(height));
+      }
+    } catch {
+      // Ignore malformed params; the user enters measurements manually
+    }
+  }, [scannedDimensions]);
 
   // ── Step 4: Results ──
   const [layouts, setLayouts] = useState<GeneratedLayout[]>([]);
@@ -146,6 +183,8 @@ export default function AIDesignModule() {
         setLayouts(response);
         setActiveLayoutIndex(0);
         setStep(4);
+        const project = projectId ? await projectService.getProjectById(projectId) : null;
+        if (project?.status === 'draft') await projectService.updateProjectStatus(project.id, 'in-progress');
       } else {
         throw new Error('No layouts returned');
       }
@@ -153,6 +192,81 @@ export default function AIDesignModule() {
       console.error('Failed to generate design:', error);
       Alert.alert('Generation Failed', error instanceof Error ? error.message : 'Could not generate layouts. Check your connection and room preferences.');
       setStep(2);
+    }
+  };
+
+  // ── Result actions ──
+  const [isSaving, setIsSaving] = useState(false);
+  const room = { width: roomWidth, length: roomDepth, height: roomHeight };
+
+  const openInAR = (layout: GeneratedLayout) => {
+    router.push({
+      pathname: '/ar-furniture',
+      params: { layoutItems: JSON.stringify(toARLayoutItems(layout, room)) },
+    });
+  };
+
+  const openIn3D = (layout: GeneratedLayout) => {
+    const design = toDesignProposal(layout, { room, roomType, style });
+    router.push({
+      pathname: '/layout-3d',
+      params: { designId: design.id, designData: JSON.stringify(design), roomDimensions: JSON.stringify(room) },
+    });
+  };
+
+  const [isExporting, setIsExporting] = useState(false);
+  const exportPdf = async (layout: GeneratedLayout) => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const design = toDesignProposal(layout, { room, roomType, style });
+      const uri = await exportAsPDF(design, room, Number(budgetInput));
+      await shareExportedFile(uri, 'pdf', design.title);
+    } catch (error) {
+      console.error('Failed to export PDF:', error);
+      Alert.alert('Export Failed', error instanceof Error ? error.message : 'Could not create the PDF.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleSaveFinal = async (layout: GeneratedLayout) => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const design = toDesignProposal(layout, { room, roomType, style });
+      // Adds the design to the Saved tab, which opens it in 3D Layout
+      await saveProject(design, room);
+
+      const finalDesign: FinalDesign = {
+        design,
+        roomDimensions: room,
+        estimatedCostPHP: layout.estimatedCostPHP,
+        budgetPHP: Number(budgetInput),
+        savedAt: Date.now(),
+      };
+      const existing = projectId ? await projectService.getProjectById(projectId) : null;
+      const project = existing ?? await projectService.createProject({
+        name: design.title,
+        roomType: (roomType === 'Dining Area' ? 'Dining Room' : roomType) as RoomType,
+        style: style as DesignStyle,
+        dimensions: room,
+      });
+      await projectService.updateProject(project.id, { status: 'completed', finalDesign });
+
+      Alert.alert(
+        'Design saved',
+        `"${project.name}" is saved with its floor plan, ${layout.furniture.length} furniture items and an estimated cost of ₱${layout.estimatedCostPHP.toLocaleString()}.`,
+        [
+          { text: 'Open in 3D', onPress: () => openIn3D(layout) },
+          { text: 'Done', onPress: () => router.push('/(tabs)') },
+        ]
+      );
+    } catch (error) {
+      console.error('Failed to save design:', error);
+      Alert.alert('Save Failed', error instanceof Error ? error.message : 'Could not save the design. Please try again.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -422,13 +536,58 @@ export default function AIDesignModule() {
               <Text style={[styles.furnitureDims, { color: colors.textSecondary }]}>
                 {item.width}m × {item.depth}m
               </Text>
+              <Text style={[styles.furniturePrice, { color: colors.textPrimary }]}>
+                {item.pricePHP === undefined ? '—' : `₱${item.pricePHP.toLocaleString()}`}
+              </Text>
             </View>
           ))}
+          <View style={[styles.costTotalRow, { borderTopColor: colors.border }]}>
+            <Text style={[styles.furnitureName, { color: colors.textPrimary, fontWeight: '700' }]}>Estimated total</Text>
+            <Text style={[styles.furniturePrice, { color: colors.textPrimary, fontWeight: '700' }]}>
+              ₱{activeLayout.estimatedCostPHP.toLocaleString()}
+            </Text>
+          </View>
+          {Number(budgetInput) > 0 && (
+            <View style={styles.furnitureRow}>
+              <Text style={[styles.furnitureName, { color: colors.textSecondary }]}>
+                {Number(budgetInput) >= activeLayout.estimatedCostPHP ? 'Remaining budget' : 'Over budget'}
+              </Text>
+              <Text style={[styles.furniturePrice, { color: Number(budgetInput) >= activeLayout.estimatedCostPHP ? '#10b981' : '#ef4444' }]}>
+                ₱{Math.abs(Number(budgetInput) - activeLayout.estimatedCostPHP).toLocaleString()}
+              </Text>
+            </View>
+          )}
         </View>
 
+        {/* Next steps */}
+        <View style={styles.resultActions}>
+          <TouchableOpacity style={[styles.resultActionButton, { borderColor: colors.accent }]} onPress={() => openInAR(activeLayout)}>
+            <Text style={[styles.resultActionText, { color: colors.accent }]}>📷 View in AR</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.resultActionButton, { borderColor: colors.accent }]} onPress={() => openIn3D(activeLayout)}>
+            <Text style={[styles.resultActionText, { color: colors.accent }]}>🧊 Open in 3D</Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={[styles.secondaryOutlineButton, { borderColor: colors.accent, marginBottom: 0, marginTop: 12 }, isExporting && { opacity: 0.6 }]}
+          onPress={() => exportPdf(activeLayout)}
+          disabled={isExporting}
+        >
+          <Text style={[styles.resultActionText, { color: colors.accent }]}>
+            {isExporting ? 'Preparing PDF…' : '📄 Floor Plan & Cost PDF'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.primaryButton, { marginHorizontal: 16, marginTop: 4 }, isSaving && { opacity: 0.6 }]}
+          onPress={() => handleSaveFinal(activeLayout)}
+          disabled={isSaving}
+        >
+          <Text style={styles.primaryButtonText}>{isSaving ? 'Saving…' : '💾 Save Final Design'}</Text>
+        </TouchableOpacity>
+
         {/* Regenerate */}
-        <TouchableOpacity style={[styles.primaryButton, { margin: 16 }]} onPress={() => setStep(2)}>
-          <Text style={styles.primaryButtonText}>🔄 Regenerate</Text>
+        <TouchableOpacity style={[styles.secondaryOutlineButton, { borderColor: colors.border }]} onPress={() => setStep(2)}>
+          <Text style={[styles.resultActionText, { color: colors.textPrimary }]}>🔄 Regenerate</Text>
         </TouchableOpacity>
       </View>
     );
@@ -580,6 +739,22 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   primaryButtonDisabled: { backgroundColor: '#94a3b8', shadowOpacity: 0, elevation: 0 },
+  resultActions: { flexDirection: 'row', gap: 12, marginHorizontal: 16, marginTop: 8 },
+  resultActionButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  resultActionText: { fontSize: 15, fontWeight: '600' },
+  secondaryOutlineButton: {
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    margin: 16,
+  },
   primaryButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 
   // Shimmer
@@ -637,4 +812,6 @@ const styles = StyleSheet.create({
   furnitureColorDot: { width: 12, height: 12, borderRadius: 6, marginRight: 10 },
   furnitureName: { flex: 1, fontSize: 14, fontWeight: '500' },
   furnitureDims: { fontSize: 13 },
+  furniturePrice: { fontSize: 13, fontWeight: '600', minWidth: 78, textAlign: 'right' },
+  costTotalRow: { flexDirection: 'row', alignItems: 'center', paddingTop: 10, marginTop: 4, borderTopWidth: 1 },
 });

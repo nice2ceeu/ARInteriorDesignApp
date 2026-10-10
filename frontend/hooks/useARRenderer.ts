@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, AccessibilityInfo, Alert, LayoutChangeEvent } from 'react-native';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
-import { Renderer } from 'expo-three';
+import { Renderer } from '@/utils/ExpoGLRenderer';
 import * as THREE from 'three';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';

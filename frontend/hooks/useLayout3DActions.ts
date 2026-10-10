@@ -7,6 +7,7 @@ import { useState, useCallback } from 'react';
 import { Alert, Share } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as THREE from 'three';
+import type { ExpoWebGLRenderingContext } from 'expo-gl';
 import type { RoomDimensions, ExportFormat } from '@/types/layout-3d';
 import type { DesignProposal } from '@/types/ai-design';
 import { exportLayout, shareExportedFile, generateShareText, calculateArea } from '@/utils/layout3dExport';
@@ -17,6 +18,7 @@ interface UseLayout3DActionsProps {
   roomDimensions: RoomDimensions;
   roomGroupRef?: React.MutableRefObject<THREE.Group | null>;
   furnitureGroupRef?: React.MutableRefObject<THREE.Group | null>;
+  glRef?: React.MutableRefObject<ExpoWebGLRenderingContext | null>;
 }
 
 interface UseLayout3DActionsReturn {
@@ -38,6 +40,7 @@ export function useLayout3DActions({
   roomDimensions,
   roomGroupRef,
   furnitureGroupRef,
+  glRef,
 }: UseLayout3DActionsProps): UseLayout3DActionsReturn {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -65,11 +68,11 @@ export function useLayout3DActions({
         design,
         roomDimensions,
         roomGroupRef?.current,
-        furnitureGroupRef?.current
+        furnitureGroupRef?.current,
+        glRef?.current
       );
 
       await shareExportedFile(uri, format, design.title);
-      Alert.alert('Success!', `Your design has been exported as ${format.toUpperCase()}`);
     } catch (err) {
       console.error('Export error:', err);
       const errorMessage = err instanceof Error ? err.message : 'Unable to export design. Please try again.';
@@ -78,7 +81,7 @@ export function useLayout3DActions({
     } finally {
       setLoading(false);
     }
-  }, [design, roomDimensions, roomGroupRef, furnitureGroupRef]);
+  }, [design, roomDimensions, roomGroupRef, furnitureGroupRef, glRef]);
 
   // Share handler
   const handleShare = useCallback(async () => {

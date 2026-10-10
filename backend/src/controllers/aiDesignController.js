@@ -1,5 +1,5 @@
 import { planLayouts, footprint } from '../services/layoutPlanner.js';
-import { getCatalog } from '../services/furnitureCatalogService.js';
+import { getCatalog, getRoomSummary } from '../services/furnitureCatalogService.js';
 import DesignSession from '../models/DesignSession.js';
 import { isMongoDBConnected } from '../db/mongodb.js';
 
@@ -17,7 +17,8 @@ export async function generateLayout(req, res, next) {
         const bounds = footprint(item);
         // FloorPlan2D receives oriented footprints to avoid double rotation.
         return { id: item.id, name: item.name, type: item.type, catalogId: item.catalogId,
-          x: bounds.x, y: bounds.z, width: bounds.width, depth: bounds.length,
+          category: item.category,
+          x: bounds.x, y: bounds.z, width: bounds.width, depth: bounds.length, height: item.dimensions.height,
           rotation: 0, placementRotation: item.position.rotation,
           color: item.properties.color, pricePHP: item.properties.price, modelUrl: item.modelUrl };
       }),
@@ -46,6 +47,12 @@ export function getFurnitureCatalog(req, res, next) {
   } catch (error) { next(error); }
 }
 
+export function getCatalogRooms(req, res, next) {
+  try {
+    res.json(getRoomSummary());
+  } catch (error) { next(error); }
+}
+
 export function estimateFurnitureCost(req, res) {
   const { furniture } = req.body;
   if (!Array.isArray(furniture) || furniture.some(item => !Number.isFinite(item?.pricePHP ?? item?.properties?.price) ||
@@ -56,4 +63,4 @@ export function estimateFurnitureCost(req, res) {
   res.json({ low: total, high: total, average: total, currency: 'PHP' });
 }
 
-export default { generateDesign, generateLayout, getFurnitureCatalog, estimateFurnitureCost };
+export default { generateDesign, generateLayout, getFurnitureCatalog, getCatalogRooms, estimateFurnitureCost };

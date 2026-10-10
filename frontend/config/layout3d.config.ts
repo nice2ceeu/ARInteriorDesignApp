@@ -5,8 +5,8 @@
 
 // Export options
 export const EXPORT_OPTIONS = [
-  { id: 'pdf', name: 'PDF Document', emoji: '📄', description: 'Floor plan with measurements' },
-  { id: 'png', name: 'High-Res Image', emoji: '🖼️', description: '4K quality render' },
+  { id: 'pdf', name: 'PDF Floor Plan', emoji: '📄', description: 'To-scale plan, furniture list and cost breakdown' },
+  { id: 'png', name: 'Image (PNG)', emoji: '🖼️', description: 'Snapshot of the current 3D view' },
   { id: 'obj', name: '3D Model (OBJ)', emoji: '📦', description: 'For 3D software' },
   { id: 'glb', name: '3D Model (GLB)', emoji: '🎮', description: 'For AR/VR apps' },
 ] as const;

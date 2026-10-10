@@ -17,7 +17,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { projectService } from '@/services/ProjectService';
 import type { RoomType, DesignStyle, CreateProjectInput } from '@/types/project';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -70,13 +70,16 @@ const CARD_WIDTH = getCardWidth();
 
 export default function CreateProjectScreen() {
   const router = useRouter();
+  const { roomType: roomParam } = useLocalSearchParams<{ roomType?: string }>();
   const { colors, statusBarStyle } = useTheme();
   const [step, setStep] = useState<'name' | 'room' | 'style' | 'dimensions'>('name');
   
   // Form state
   const [projectName, setProjectName] = useState('');
   const [description, setDescription] = useState('');
-  const [selectedRoom, setSelectedRoom] = useState<RoomType | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<RoomType | null>(
+    ROOM_TYPES.find(room => room === roomParam) ?? null
+  );
   const [selectedStyle, setSelectedStyle] = useState<DesignStyle | null>(null);
   const [length, setLength] = useState('');
   const [width, setWidth] = useState('');
@@ -88,7 +91,8 @@ export default function CreateProjectScreen() {
       Alert.alert('Required', 'Please enter a project name');
       return;
     }
-    setStep('room');
+    // A room chosen on the Home screen skips the room step.
+    setStep(selectedRoom ? 'style' : 'room');
   };
 
   const handleRoomSelect = (room: RoomType) => {
@@ -194,7 +198,7 @@ export default function CreateProjectScreen() {
         [
           {
             text: 'Start Designing',
-            onPress: () => router.push('/ai-design'),
+            onPress: () => router.push({ pathname: '/ai-design', params: { projectId: project.id } }),
           },
           {
             text: 'Go to Home',

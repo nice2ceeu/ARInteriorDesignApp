@@ -76,6 +76,7 @@ export default function Layout3DScreen() {
     roomDimensions,
     roomGroupRef: scene.roomGroupRef,
     furnitureGroupRef: scene.furnitureGroupRef,
+    glRef: scene.glRef,
   });
 
   // Load design from params

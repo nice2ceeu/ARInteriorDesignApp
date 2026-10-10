@@ -30,6 +30,9 @@ test('legacy floor-plan and proposal endpoints work without Gemini or MongoDB', 
   assert.ok(modern.body.exportData.structuredData);
   const catalog = await request(app).get('/designs/furniture/Bedroom').expect(200);
   assert.equal(catalog.body.currency, 'PHP');
+  const rooms = await request(app).get('/designs/rooms').expect(200);
+  assert.equal(rooms.body.source, 'sample-catalog');
+  assert.equal(rooms.body.rooms.find(room => room.roomType === 'Bedroom').itemCount, catalog.body.total);
   const estimate = await request(app).post('/designs/estimate-cost').send({ furniture: catalog.body.furniture }).expect(200);
   assert.equal(estimate.body.average, catalog.body.furniture.reduce((sum, item) => sum + item.pricePHP, 0));
 });

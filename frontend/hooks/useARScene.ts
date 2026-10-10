@@ -5,7 +5,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { Renderer } from 'expo-three';
+import { Renderer } from '@/utils/ExpoGLRenderer';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import { AR_CONFIG } from '@/config/arView.config';
 import { classifyARError } from '@/utils/arErrorHandling';

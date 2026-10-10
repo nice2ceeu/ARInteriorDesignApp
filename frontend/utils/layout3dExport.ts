@@ -5,15 +5,26 @@
 
 import * as THREE from 'three';
 import * as FileSystem from 'expo-file-system/legacy';
+import { GLView, type ExpoWebGLRenderingContext } from 'expo-gl';
 import { Share } from 'react-native';
-import type { 
-  RoomDimensions, 
-  Layout3DFurnitureItem,
-  ExportData,
-  FloorPlanExportData,
-  ExportFormat 
+import type {
+  RoomDimensions,
+  ExportFormat
 } from '@/types/layout-3d';
 import type { DesignProposal } from '@/types/ai-design';
+import { buildFloorPlanPdf, formatPHP } from './floorPlanPdf';
+import { buildGlb, toBase64 } from './glbExport';
+
+const MIME_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  png: 'image/png',
+  glb: 'model/gltf-binary',
+  obj: 'text/plain',
+  json: 'application/json',
+};
+
+const exportFileName = (design: DesignProposal | null, extension: string) =>
+  `${(design?.title || 'layout').replace(/[^a-z0-9\-]+/gi, '_')}_${Date.now()}.${extension}`;
 
 /**
  * Calculate room area
@@ -23,24 +34,19 @@ export function calculateArea(dimensions: RoomDimensions): string {
 }
 
 /**
- * Export as PNG (metadata for now - actual image capture requires canvas)
+ * Export as PNG: a snapshot of the current 3D view
  */
 export async function exportAsPNG(
   design: DesignProposal | null,
-  dimensions: RoomDimensions
+  gl: ExpoWebGLRenderingContext | null
 ): Promise<string> {
-  const exportData: ExportData = {
-    design: design?.title,
-    dimensions,
-    furniture: design?.layout?.furniture,
-    exportedAt: Date.now(),
-    format: 'png',
-  };
-  
-  const filename = `layout_${Date.now()}.png.json`;
-  const uri = (FileSystem.documentDirectory || '') + filename;
-  await FileSystem.writeAsStringAsync(uri, JSON.stringify(exportData, null, 2));
-  
+  if (!gl) throw new Error('The 3D view is not ready yet. Try again in a moment.');
+  const snapshot = await GLView.takeSnapshotAsync(gl, { format: 'png' });
+  const source = typeof snapshot.uri === 'string' ? snapshot.uri : '';
+  if (!source) throw new Error('Could not capture the 3D view.');
+
+  const uri = (FileSystem.documentDirectory || '') + exportFileName(design, 'png');
+  await FileSystem.copyAsync({ from: source, to: uri });
   return uri;
 }
 
@@ -117,53 +123,31 @@ export async function exportAsOBJ(
 }
 
 /**
- * Export as GLB (JSON metadata - full GLB requires GLTFExporter)
+ * Export as GLB: binary glTF of the room and furniture meshes
  */
 export async function exportAsGLB(
   design: DesignProposal | null,
-  dimensions: RoomDimensions
+  roomGroup: THREE.Group | null,
+  furnitureGroup: THREE.Group | null
 ): Promise<string> {
-  const exportData: ExportData = {
-    design: design?.title,
-    dimensions,
-    furniture: design?.layout?.furniture,
-    exportedAt: Date.now(),
-    format: 'glb',
-    note: 'Full GLB export requires GLTFExporter library',
-  };
-  
-  const filename = `layout_${Date.now()}.glb.json`;
-  const uri = (FileSystem.documentDirectory || '') + filename;
-  await FileSystem.writeAsStringAsync(uri, JSON.stringify(exportData, null, 2));
-  
+  const glb = buildGlb([roomGroup, furnitureGroup]);
+  const uri = (FileSystem.documentDirectory || '') + exportFileName(design, 'glb');
+  await FileSystem.writeAsStringAsync(uri, toBase64(glb), { encoding: FileSystem.EncodingType.Base64 });
   return uri;
 }
 
 /**
- * Export as PDF (floor plan data as JSON)
+ * Export as PDF: to-scale floor plan, furniture list and cost breakdown
  */
 export async function exportAsPDF(
   design: DesignProposal | null,
-  dimensions: RoomDimensions
+  dimensions: RoomDimensions,
+  budgetPHP?: number
 ): Promise<string> {
-  const floorPlanData: FloorPlanExportData = {
-    title: design?.title,
-    dimensions,
-    area: calculateArea(dimensions),
-    furniture: design?.layout?.furniture?.map((item: any) => ({
-      name: item.name,
-      position: item.position,
-      dimensions: item.dimensions,
-    })),
-    exportedAt: Date.now(),
-    format: 'pdf',
-    note: 'Full PDF export requires PDF generation library',
-  };
-  
-  const filename = `floor_plan_${Date.now()}.pdf.json`;
-  const uri = (FileSystem.documentDirectory || '') + filename;
-  await FileSystem.writeAsStringAsync(uri, JSON.stringify(floorPlanData, null, 2));
-  
+  if (!design) throw new Error('There is no design to export');
+  const pdf = buildFloorPlanPdf({ design, room: dimensions, budgetPHP });
+  const uri = (FileSystem.documentDirectory || '') + exportFileName(design, 'pdf');
+  await FileSystem.writeAsStringAsync(uri, pdf);
   return uri;
 }
 
@@ -199,19 +183,30 @@ export async function exportLayout(
   design: DesignProposal | null,
   dimensions: RoomDimensions,
   roomGroup?: THREE.Group | null,
-  furnitureGroup?: THREE.Group | null
+  furnitureGroup?: THREE.Group | null,
+  gl?: ExpoWebGLRenderingContext | null
 ): Promise<string> {
   switch (format) {
     case 'png':
-      return exportAsPNG(design, dimensions);
+      return exportAsPNG(design, gl || null);
     case 'obj':
       return exportAsOBJ(design, roomGroup || null, furnitureGroup || null);
     case 'glb':
-      return exportAsGLB(design, dimensions);
+      return exportAsGLB(design, roomGroup || null, furnitureGroup || null);
     case 'pdf':
       return exportAsPDF(design, dimensions);
     default:
       return exportAsJSON(design, dimensions);
+  }
+}
+
+// expo-sharing is a native module; builds made before it was added fall back to Share.
+async function loadSharing() {
+  try {
+    const Sharing = await import('expo-sharing');
+    return (await Sharing.isAvailableAsync()) ? Sharing : null;
+  } catch {
+    return null;
   }
 }
 
@@ -223,6 +218,15 @@ export async function shareExportedFile(
   format: string,
   title: string
 ): Promise<void> {
+  const Sharing = await loadSharing();
+  if (Sharing) {
+    await Sharing.shareAsync(uri, {
+      mimeType: MIME_TYPES[format],
+      dialogTitle: `${title} (${format.toUpperCase()})`,
+    });
+    return;
+  }
+  // React Native's Share attaches files on iOS only; Android receives the text.
   await Share.share({
     url: uri,
     title: `3D Layout Export (${format.toUpperCase()})`,
@@ -245,7 +249,7 @@ export function generateShareText(
 📐 Dimensions: ${dimensions.width}m × ${dimensions.length}m × ${dimensions.height}m
 📏 Area: ${calculateArea(dimensions)} m²
 🪑 Furniture: ${design.layout?.furniture?.length || 0} pieces
-💰 Cost: $${design.estimatedCost?.low?.toLocaleString() || 0} - $${design.estimatedCost?.high?.toLocaleString() || 0}
+💰 Estimated cost: ${formatPHP(design.estimatedCost?.mid ?? 0)}
 
 🎨 Colors: ${design.colorPalette?.join(', ') || 'N/A'}
 📊 Score: ${design.performanceScore?.overall?.toFixed(0) || 0}/100

@@ -6,7 +6,7 @@
  */
 
 import { getDatabase } from '../db/database.js';
-import { v4 as uuidv4 } from 'uuid';
+
 
 // ============================================================================
 // DEFAULT COLOR PALETTES

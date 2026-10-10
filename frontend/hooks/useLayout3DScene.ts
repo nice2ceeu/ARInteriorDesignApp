@@ -6,7 +6,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { PanResponder } from 'react-native';
 import * as THREE from 'three';
-import { Renderer } from 'expo-three';
+import { Renderer } from '@/utils/ExpoGLRenderer';
 import { ExpoWebGLRenderingContext } from 'expo-gl';
 import type { RoomDimensions, ViewMode, CameraControls, GLLayoutDimensions, Layout3DFurnitureItem } from '@/types/layout-3d';
 import type { DesignProposal } from '@/types/ai-design';
@@ -41,6 +41,7 @@ interface UseLayout3DSceneReturn {
   furnitureGroupRef: React.MutableRefObject<THREE.Group | null>;
   measurementGroupRef: React.MutableRefObject<THREE.Group | null>;
   glLayoutRef: React.MutableRefObject<GLLayoutDimensions>;
+  glRef: React.MutableRefObject<ExpoWebGLRenderingContext | null>;
   raycasterRef: React.MutableRefObject<THREE.Raycaster>;
   // State
   isRendering: boolean;
@@ -68,6 +69,7 @@ export function useLayout3DScene({
   const roomGroupRef = useRef<THREE.Group | null>(null);
   const furnitureGroupRef = useRef<THREE.Group | null>(null);
   const measurementGroupRef = useRef<THREE.Group | null>(null);
+  const glRef = useRef<ExpoWebGLRenderingContext | null>(null);
   const glLayoutRef = useRef<GLLayoutDimensions>({ width: 0, height: 0 });
   const raycasterRef = useRef<THREE.Raycaster>(new THREE.Raycaster());
 
@@ -122,6 +124,7 @@ export function useLayout3DScene({
   const onGLContextCreate = useCallback(
     async (gl: ExpoWebGLRenderingContext) => {
       const { drawingBufferWidth, drawingBufferHeight } = gl;
+      glRef.current = gl;
 
       // Create scene
       const scene = createScene();
@@ -318,6 +321,7 @@ export function useLayout3DScene({
     furnitureGroupRef,
     measurementGroupRef,
     glLayoutRef,
+    glRef,
     raycasterRef,
     isRendering,
     furnitureMeshes,

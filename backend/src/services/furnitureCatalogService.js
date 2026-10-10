@@ -8,14 +8,20 @@ const SAMPLE_PRICES = {
   wardrobe: 8000, nightstand: 1500, dresser: 5000, armchair: 4000,
 };
 
-export function getCatalog(roomType) {
-  const normalized = roomType === 'Dining Area' ? 'Dining Room' : roomType;
+function readClientCatalog() {
   const file = process.env.FURNITURE_CATALOG_PATH;
+  if (!file) return null;
+  const document = JSON.parse(readFileSync(file, 'utf8'));
+  if (!Array.isArray(document.furniture)) throw new Error('Catalog must contain a furniture array');
+  return document.furniture;
+}
+
+export function getCatalog(roomType, clientItems = readClientCatalog()) {
+  const normalized = roomType === 'Dining Area' ? 'Dining Room' : roomType;
+  const file = Boolean(clientItems);
   let entries;
   if (file) {
-    const document = JSON.parse(readFileSync(file, 'utf8'));
-    if (!Array.isArray(document.furniture)) throw new Error('Catalog must contain a furniture array');
-    entries = document.furniture.filter(item => !item.roomTypes || item.roomTypes.includes(normalized));
+    entries = clientItems.filter(item => !item.roomTypes || item.roomTypes.includes(normalized));
   } else {
     entries = DEFAULT_CATALOG[normalized];
   }
@@ -39,4 +45,20 @@ export function getCatalog(roomType) {
       priceSource: file ? 'client-catalog' : 'sample-estimate',
     };
   });
+}
+
+// Item counts per room type. Room types come from the client catalog's roomTypes when one is configured.
+export function getRoomSummary() {
+  const clientItems = readClientCatalog();
+  const declared = clientItems?.flatMap(item => item.roomTypes || []) || [];
+  const roomTypes = declared.length ? [...new Set(declared)] : Object.keys(DEFAULT_CATALOG);
+  const rooms = roomTypes.map(roomType => {
+    try {
+      return { roomType, itemCount: getCatalog(roomType, clientItems).length };
+    } catch (error) {
+      if (error.statusCode === 400) return { roomType, itemCount: 0 };
+      throw error;
+    }
+  });
+  return { source: clientItems ? 'client-catalog' : 'sample-catalog', rooms };
 }
