@@ -40,6 +40,12 @@ import { useTheme } from '@/contexts/ThemeContext';
 // Overlay text on the 3D viewer, whose background is always dark
 const VIEWER_TEXT = '#E5E7EB';
 
+const VIEW_MODE_HINTS: Record<ViewMode, string> = {
+  perspective: 'Realistic view · drag to orbit, pinch to zoom',
+  'top-down': 'Floor plan · drag to pan, pinch to zoom',
+  orthographic: 'Isometric · drag to turn 90°, pinch to zoom',
+};
+
 export default function Layout3DScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -206,6 +212,9 @@ export default function Layout3DScreen() {
                 </AnimatedButton>
               )}
             </View>
+            <Text style={[styles.viewModeHint, { color: VIEWER_TEXT }]} pointerEvents="none">
+              {VIEW_MODE_HINTS[viewMode]}
+            </Text>
 
             <View style={styles.controlButtons}>
               <AnimatedButton
@@ -500,6 +509,13 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     pointerEvents: 'box-none',
+  },
+  viewModeHint: {
+    fontSize: 11,
+    marginHorizontal: 14,
+    marginTop: -6,
+    textShadowColor: 'rgba(0, 0, 0, 0.6)',
+    textShadowRadius: 3,
   },
   viewModeSelector: {
     flexDirection: 'row',
