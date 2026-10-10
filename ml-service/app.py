@@ -7,6 +7,7 @@ import os
 import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from dotenv import load_dotenv
@@ -14,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
+import layout_optimizer
 from features import FEATURE_NAMES, FEATURE_VERSION, feature_vector
 
 load_dotenv()
@@ -67,13 +69,68 @@ class RankingRequest(BaseModel):
     candidates: list[Candidate] = Field(min_length=1, max_length=50)
 
 
+class RoomSize(BaseModel):
+    width: float = Field(gt=0, le=50)
+    length: float = Field(gt=0, le=50)
+    height: float = Field(gt=0, le=10)
+
+
+class LayoutItem(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    type: str = Field(min_length=1, max_length=60)
+    name: str = Field(min_length=1, max_length=120)
+    width: float = Field(gt=0, le=20)
+    length: float = Field(gt=0, le=20)
+    height: float = Field(gt=0, le=10)
+    mandatory: bool = False
+
+
+class LayoutOpening(BaseModel):
+    type: Literal["door", "window"]
+    wall: Literal["north", "east", "south", "west"]
+    offset: float = Field(default=0.5, ge=0, le=1)
+    width: float = Field(default=0.9, gt=0, le=5)
+
+
+class FixedObstacle(BaseModel):
+    x: float = Field(ge=0, le=50)
+    z: float = Field(ge=0, le=50)
+    width: float = Field(gt=0, le=50)
+    length: float = Field(gt=0, le=50)
+
+
+class OptimizeRequest(BaseModel):
+    room: RoomSize
+    items: list[LayoutItem] = Field(min_length=1, max_length=20)
+    openings: list[LayoutOpening] = Field(default_factory=list, max_length=10)
+    obstacles: list[FixedObstacle] = Field(default_factory=list, max_length=50)
+    gap: float = Field(default=0.3, ge=0, le=2)
+    wallGap: float = Field(default=0.05, ge=0, le=1)
+    count: int = Field(default=3, ge=1, le=5)
+    seed: int | None = None
+
+
 @app.get("/health")
 def health():
     return {
         "detector": "owlv2", "detectorReady": state["detector"] is not None,
         "ranker": "xgboost", "rankerReady": state["ranker"] is not None,
+        "layoutOptimizer": "guideline-annealing", "layoutOptimizerReady": True,
         "featureVersion": FEATURE_VERSION,
     }
+
+
+@app.post("/optimize-layout")
+def optimize_layout(request: OptimizeRequest):
+    room = layout_optimizer.Room(request.room.width, request.room.length, request.room.height)
+    items = [layout_optimizer.Item(i.id, i.type, i.name, i.width, i.length, i.height, i.mandatory) for i in request.items]
+    openings = [layout_optimizer.Opening(o.type, o.wall, o.offset, o.width) for o in request.openings]
+    obstacles = tuple((o.x, o.z, o.x + o.width, o.z + o.length) for o in request.obstacles)
+    try:
+        return layout_optimizer.generate(room, items, openings, gap=request.gap, wall_gap=request.wallGap,
+                                         count=request.count, seed=request.seed, obstacles=obstacles)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @app.post("/detect")

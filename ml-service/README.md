@@ -60,8 +60,13 @@ Set `LAYOUT_RANKER_PATH=models/layout-ranker.json` in ml-service/.env and restar
 - `POST /api/v1/design/generate`: keeps the existing floor-plan array contract; accepts roomDimensions, roomType, style, budgetPHP and requiredFurniture IDs/types.
 - `POST /api/v1/designs/generate`: returns proposals, rank features and rankingSource. Also accepts measured `constraints.fixedObstacles` and clearance limits.
 - `POST /rank` is internal. Scores are ranking values, not probabilities or accuracy percentages.
+- `POST /optimize-layout` is internal: `{ "room": {width, length, height}, "items": [{id, type, name, width, length, height, mandatory}], "openings": [{"type": "door", "wall": "south", "offset": 0.5, "width": 0.9}], "obstacles": [{x, z, width, length}], "count": 3 }`. Returns up to `count` layouts with poses (`x`, `z`, `rotation`), a score (share of rules met) and per-rule `checks`. Both public generate endpoints accept the same `openings` list.
 
-Furniture footprints use a top-left room origin in meters (x across width, z along depth), and dimensions are rotated when checking occupancy. The floor-plan adapter emits oriented footprints with rotation 0 to prevent double rotation. The planner checks bounds, pairwise gaps and measured fixed-obstacle footprints. It does not guarantee connected accessible walkways, infer door locations from labels, or guarantee three unique solutions for every room.
+### Design-rule layout optimizer
+
+`layout_optimizer.py` runs simulated annealing (about 1,500 steps × 6 runs, a few seconds on a laptop CPU) over a cost built from interior design guidelines: backs against walls, functional pairs (nightstand–bed, chair–desk, coffee table–sofa, TV–sofa), clear floor in front of furniture, door swing, windows, a walkable path from the door (raster flood fill), and visual balance. It returns diverse layouts, preferring ones that keep all requested furniture and a clear door. Approach after Merrell et al. 2011 and Yu et al. 2011. When this service is offline, Express falls back to a basic grid planner and reports that in the layout warnings.
+
+Furniture footprints use a top-left room origin in meters (x across width, z along depth), and dimensions are rotated when checking occupancy. Rotation 0 backs an item onto the north wall (z = 0); 90 the east wall, 180 the south wall, 270 the west wall. The floor-plan adapter emits oriented footprints with rotation 0 to prevent double rotation. Door and window positions come from the wall the user selects; photo detections alone do not provide positions.
 
 ## Verification
 

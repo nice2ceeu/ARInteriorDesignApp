@@ -22,7 +22,7 @@ export async function generateLayout(req, res, next) {
           rotation: 0, placementRotation: item.position.rotation,
           color: item.properties.color, pricePHP: item.properties.price, modelUrl: item.modelUrl };
       }),
-      safety_warnings: proposal.cons, score: proposal.performanceScore.overall,
+      safety_warnings: proposal.cons, score: proposal.performanceScore.overall, designChecks: proposal.designChecks,
       rankingScore: proposal.rankingScore, rankingSource: result.metadata.rankingSource,
       estimatedCostPHP: proposal.estimatedCost.mid, currency: 'PHP',
     }));

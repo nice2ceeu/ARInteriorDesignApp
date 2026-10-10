@@ -18,13 +18,34 @@ export interface FurnitureItem {
   color: string;
 }
 
+/** A door or window on a wall; offset is its center along the wall (0..1, left-to-right or top-to-bottom). */
+export interface Opening {
+  type: 'door' | 'window';
+  wall: 'north' | 'east' | 'south' | 'west';
+  offset?: number;
+  width?: number;
+}
+
 interface FloorPlan2DProps {
   roomDimensions: RoomDimensions;
   furniture: FurnitureItem[];
   obstacles: string[];
+  openings?: Opening[];
 }
 
-export default function FloorPlan2D({ roomDimensions, furniture, obstacles }: FloorPlan2DProps) {
+const OPENING_COLORS = { door: '#b45309', window: '#0ea5e9' };
+
+/** Dark text on light furniture colors, white text on dark ones. */
+export function labelColor(fill: string): string {
+  const match = /^#?([0-9a-f]{6})$/i.exec(fill);
+  if (!match) return '#0f172a';
+  const value = parseInt(match[1], 16);
+  const [r, g, b] = [value >> 16, (value >> 8) & 0xff, value & 0xff];
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.6 ? '#0f172a' : '#ffffff';
+}
+
+export default function FloorPlan2D({ roomDimensions, furniture, obstacles, openings = [] }: FloorPlan2DProps) {
   // Screen width minus padding
   const containerWidth = Dimensions.get('window').width - 32;
   
@@ -52,8 +73,29 @@ export default function FloorPlan2D({ roomDimensions, furniture, obstacles }: Fl
           strokeWidth="4"
         />
 
-        {/* Obstacles (Simplified rendering for visualization) */}
-        {obstacles.map((obs, idx) => {
+        {/* Doors and windows drawn on their walls */}
+        {openings.map((opening, idx) => {
+          const horizontal = opening.wall === 'north' || opening.wall === 'south';
+          const wallLength = horizontal ? svgWidth : svgHeight;
+          const span = (opening.width ?? (opening.type === 'door' ? 0.9 : 1.2)) * scale;
+          const start = (opening.offset ?? 0.5) * wallLength - span / 2;
+          const thickness = 8;
+          const x = horizontal ? start : opening.wall === 'west' ? 0 : svgWidth - thickness;
+          const y = horizontal ? (opening.wall === 'north' ? 0 : svgHeight - thickness) : start;
+          return (
+            <Rect
+              key={`opening-${idx}`}
+              x={x}
+              y={y}
+              width={horizontal ? span : thickness}
+              height={horizontal ? thickness : span}
+              fill={OPENING_COLORS[opening.type]}
+            />
+          );
+        })}
+
+        {/* Other obstacles (simplified markers; doors and windows with known walls are drawn above) */}
+        {obstacles.filter(obs => !openings.some(opening => opening.type === obs)).map((obs, idx) => {
           // Simplistic obstacle rendering on the borders
           const isDoor = obs.toLowerCase().includes('door');
           const isWindow = obs.toLowerCase().includes('window');
@@ -100,7 +142,7 @@ export default function FloorPlan2D({ roomDimensions, furniture, obstacles }: Fl
               <SvgText
                 x={centerX}
                 y={centerY}
-                fill="#ffffff"
+                fill={labelColor(item.color || '#94a3b8')}
                 fontSize="10"
                 fontWeight="bold"
                 textAnchor="middle"

@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { getCatalog } from './furnitureCatalogService.js';
 import { STYLE_PALETTES } from '../data/furnitureCatalog.js';
-import { rankCandidates } from './mlService.js';
+import { optimizeLayouts, rankCandidates } from './mlService.js';
+
+const WALLS = ['north', 'east', 'south', 'west'];
+const ROTATIONS = [0, 90, 180, 270];
 
 function invalid(message, statusCode = 400) {
   return Object.assign(new Error(message), { statusCode });
@@ -53,7 +56,14 @@ function normalize(input) {
     }
     return rect;
   });
-  return { room, gap, wall, obstacles, required };
+  const openings = input.openings || [];
+  if (!Array.isArray(openings) || openings.length > 10 || openings.some(o =>
+      !['door', 'window'].includes(o?.type) || !WALLS.includes(o?.wall) ||
+      (o.offset !== undefined && !(o.offset >= 0 && o.offset <= 1)) ||
+      (o.width !== undefined && !(o.width > 0 && o.width <= 5)))) {
+    throw invalid('openings must list doors or windows on the north, east, south or west wall');
+  }
+  return { room, gap, wall, obstacles, required, openings };
 }
 
 function chooseFurniture(catalog, required, budgetPHP, room) {
@@ -117,22 +127,61 @@ function place(items, context, variant, palette) {
       continue;
     }
     const { cost, ...point } = position;
-    furniture.push({
-      id: `${item.id}-${furniture.length}`, catalogId: item.id, name: item.name, type: item.type,
-      category: item.category, dimensions: item.dimensions, position: point,
-      properties: { price: item.pricePHP, color: palette[furniture.length % palette.length] },
-      modelUrl: item.modelUrl, priceSource: item.priceSource, zIndex: furniture.length + 1,
-    });
+    furniture.push(toFurniture(item, point, furniture.length, palette));
   }
   return furniture.length ? { furniture, omitted } : null;
 }
 
-export async function planLayouts(input) {
-  const start = Date.now();
-  const context = normalize(input);
-  const catalog = getCatalog(input.roomType);
-  const items = chooseFurniture(catalog, context.required, input.budgetPHP, context.room);
-  const palette = STYLE_PALETTES[input.designStyle || input.style] || STYLE_PALETTES.Modern;
+function toFurniture(item, position, index, palette) {
+  return {
+    id: `${item.id}-${index}`, catalogId: item.id, name: item.name, type: item.type,
+    category: item.category, dimensions: item.dimensions, position,
+    properties: { price: item.pricePHP, color: palette[index % palette.length] },
+    modelUrl: item.modelUrl, priceSource: item.priceSource, zIndex: index + 1,
+  };
+}
+
+// Guideline-optimized layouts from the ML service, checked before they are trusted
+async function optimizedCandidates(items, context, palette) {
+  const result = await optimizeLayouts({
+    room: context.room,
+    items: items.map(item => ({
+      id: item.id, type: item.type, name: item.name, mandatory: item.mandatory,
+      width: item.dimensions.width, length: item.dimensions.length, height: item.dimensions.height,
+    })),
+    openings: context.openings.map(o => ({
+      type: o.type, wall: o.wall, offset: o.offset ?? 0.5, width: o.width ?? (o.type === 'door' ? 0.9 : 1.2),
+    })),
+    obstacles: context.obstacles.map(o => ({ x: o.x, z: o.z, width: o.width, length: o.length })),
+    gap: context.gap, wallGap: context.wall, count: 3,
+  });
+  if (!result) return null;
+  const byId = new Map(items.map(item => [item.id, item]));
+  const candidates = [];
+  for (const layout of result.layouts) {
+    if (!Array.isArray(layout?.furniture) || !Array.isArray(layout.checks)) return null;
+    const furniture = [];
+    for (const entry of layout.furniture) {
+      const item = byId.get(entry?.id);
+      if (!item || !ROTATIONS.includes(entry.rotation) || ![entry.x, entry.z].every(Number.isFinite)) return null;
+      const placed = toFurniture(item, { x: entry.x, y: 0, z: entry.z, rotation: entry.rotation }, furniture.length, palette);
+      const box = footprint(placed);
+      if (box.x < -1e-6 || box.z < -1e-6 || box.x + box.width > context.room.width + 1e-6 ||
+          box.z + box.length > context.room.length + 1e-6) return null;
+      furniture.push(placed);
+    }
+    if (items.some(item => item.mandatory && !furniture.some(placed => placed.catalogId === item.id))) return null;
+    candidates.push({
+      furniture,
+      omitted: Array.isArray(layout.omitted) ? layout.omitted.map(String) : [],
+      designChecks: layout.checks.map(check => ({ rule: String(check.rule), passed: check.passed === true })),
+      designScore: Number.isFinite(layout.score) ? layout.score : null,
+    });
+  }
+  return candidates.length ? candidates : null;
+}
+
+function gridCandidates(items, context, palette) {
   const candidates = [];
   const seen = new Set();
   for (let variant = 0; variant < 12; variant++) {
@@ -145,57 +194,88 @@ export async function planLayouts(input) {
     const key = JSON.stringify(result.furniture.map(item => [item.catalogId, item.position]));
     if (seen.has(key)) continue;
     seen.add(key);
-    const area = context.room.width * context.room.length;
-    const occupied = result.furniture.reduce((sum, item) => sum + item.dimensions.width * item.dimensions.length, 0);
-    const totalCost = result.furniture.reduce((sum, item) => sum + item.properties.price, 0);
-    const center = { x: context.room.width / 2 - 0.45, z: context.room.length / 2 - 0.45, width: 0.9, length: 0.9 };
-    const centerClear = result.furniture.every(item => !overlaps(footprint(item), center)) ? 1 : 0;
-    const symmetry = result.furniture.reduce((sum, item) => {
-      const bounds = footprint(item);
-      return sum + 1 - Math.min(1, Math.abs(bounds.x + bounds.width / 2 - context.room.width / 2) / (context.room.width / 2));
-    }, 0) / result.furniture.length;
-    const meanX = result.furniture.reduce((sum, item) => sum + (footprint(item).x + footprint(item).width / 2) / context.room.width, 0) / result.furniture.length;
-    const meanZ = result.furniture.reduce((sum, item) => sum + (footprint(item).z + footprint(item).length / 2) / context.room.length, 0) / result.furniture.length;
-    const features = {
-      roomArea: area, furnitureCount: result.furniture.length, occupancyRatio: occupied / area,
-      budgetUtilization: input.budgetPHP ? totalCost / input.budgetPHP : 0,
-      requiredCoverage: 1, minimumGap: context.gap,
-      centerClear, symmetry, meanX, meanZ,
-      heuristicScore: Math.max(0, Math.min(100, 80 + centerClear * 10 + symmetry * 10 - result.omitted.length * 5 - occupied / area * 20)),
-    };
-    candidates.push({ id: randomUUID(), ...result, totalCost, features });
+    candidates.push(result);
   }
+  return candidates;
+}
+
+function describe(result, context, input) {
+  const area = context.room.width * context.room.length;
+  const occupied = result.furniture.reduce((sum, item) => sum + item.dimensions.width * item.dimensions.length, 0);
+  const totalCost = result.furniture.reduce((sum, item) => sum + item.properties.price, 0);
+  const center = { x: context.room.width / 2 - 0.45, z: context.room.length / 2 - 0.45, width: 0.9, length: 0.9 };
+  const centerClear = result.furniture.every(item => !overlaps(footprint(item), center)) ? 1 : 0;
+  const symmetry = result.furniture.reduce((sum, item) => {
+    const bounds = footprint(item);
+    return sum + 1 - Math.min(1, Math.abs(bounds.x + bounds.width / 2 - context.room.width / 2) / (context.room.width / 2));
+  }, 0) / result.furniture.length;
+  const meanX = result.furniture.reduce((sum, item) => sum + (footprint(item).x + footprint(item).width / 2) / context.room.width, 0) / result.furniture.length;
+  const meanZ = result.furniture.reduce((sum, item) => sum + (footprint(item).z + footprint(item).length / 2) / context.room.length, 0) / result.furniture.length;
+  const geometricScore = 80 + centerClear * 10 + symmetry * 10 - result.omitted.length * 5 - occupied / area * 20;
+  const features = {
+    roomArea: area, furnitureCount: result.furniture.length, occupancyRatio: occupied / area,
+    budgetUtilization: input.budgetPHP ? totalCost / input.budgetPHP : 0,
+    requiredCoverage: 1, minimumGap: context.gap,
+    centerClear, symmetry, meanX, meanZ,
+    heuristicScore: Math.max(0, Math.min(100, result.designScore ?? geometricScore)),
+  };
+  return { id: randomUUID(), ...result, totalCost, features };
+}
+
+export async function planLayouts(input) {
+  const start = Date.now();
+  const context = normalize(input);
+  const catalog = getCatalog(input.roomType);
+  const items = chooseFurniture(catalog, context.required, input.budgetPHP, context.room);
+  const palette = STYLE_PALETTES[input.designStyle || input.style] || STYLE_PALETTES.Modern;
+  const optimized = await optimizedCandidates(items, context, palette);
+  const candidates = (optimized ?? gridCandidates(items, context, palette)).map(result => describe(result, context, input));
   if (!candidates.length) throw invalid('No feasible layout found. Reduce furniture, increase the room size, or adjust clearances.', 422);
   const ranking = await rankCandidates(candidates.map(item => ({ id: item.id, features: item.features })));
   candidates.forEach((candidate, index) => { candidate.rankScore = ranking.scores[index]; });
   candidates.sort((a, b) => b.rankScore - a.rankScore);
   const warnings = [
     'Room dimensions must be measured; image detections alone do not provide 3D coordinates.',
-    'Clearance checks cover furniture and measured obstacles; connected walkway access requires review.',
-    'Performance scores are geometric proxies; comfort, lighting and aesthetics have not been independently evaluated.',
+    ...(optimized ? [] : ['Clearance checks cover furniture and measured obstacles; connected walkway access requires review.']),
+    optimized
+      ? 'Scores are the share of interior design rules met; they are not user ratings.'
+      : 'Performance scores are geometric proxies; comfort, lighting and aesthetics have not been independently evaluated.',
   ];
+  if (!optimized) warnings.push('The design-rule optimizer is offline, so layouts use basic placement without interior design rules.');
   if (catalog.some(item => item.priceSource === 'sample-estimate')) warnings.push('Prices are sample PHP estimates; replace them with supplier prices.');
-  if (input.detectedObstacles?.length && !context.obstacles.length) warnings.push('Detected obstacle labels have no measured locations; verify door and window clearance manually.');
+  // Doors and windows placed on a wall count as located; other labels still need measuring
+  const unlocated = (input.detectedObstacles || []).filter(label => !context.openings.some(o => o.type === label));
+  if (unlocated.length && !context.obstacles.length) warnings.push(`Detected obstacles without measured locations (${unlocated.join(', ')}); verify their clearance manually.`);
   if (ranking.source === 'geometric') warnings.push('Layouts use geometric scoring until a trained layout ranker is available.');
   const proposals = candidates.slice(0, 3).map((candidate, index) => {
     const score = Math.round(candidate.features.heuristicScore);
     return {
       id: candidate.id, roomType: input.roomType, title: `${input.designStyle || input.style || 'Modern'} ${input.roomType} — option ${index + 1}`,
-      description: `Constraint-based arrangement of ${candidate.furniture.length} furniture items.`,
+      description: optimized
+        ? `Arrangement of ${candidate.furniture.length} furniture items optimized for interior design rules.`
+        : `Constraint-based arrangement of ${candidate.furniture.length} furniture items.`,
       layout: { id: candidate.id, version: 1, furniture: candidate.furniture,
-        metadata: { generatedAt: Date.now(), algorithm: ranking.source === 'xgboost' ? 'hybrid' : 'rule-based', iterationsCount: 12, dimensions: context.room } },
+        metadata: { generatedAt: Date.now(), algorithm: ranking.source === 'xgboost' ? 'hybrid' : 'rule-based', iterationsCount: optimized ? 1500 : 12, dimensions: context.room } },
       performanceScore: Object.fromEntries(['overall', 'spaceEfficiency', 'comfort', 'symmetry', 'accessibility', 'aesthetics', 'functionalFlow', 'lighting', 'ergonomics'].map(key => [key, score])),
       visualization: { renderData: null }, colorPalette: palette, recommendedFurniture: candidate.furniture,
       estimatedCost: { low: candidate.totalCost, mid: candidate.totalCost, high: candidate.totalCost },
-      currency: 'PHP', pros: ['Furniture fits room bounds', 'No furniture overlaps', 'Required items included'],
-      cons: [...warnings, ...candidate.omitted.map(name => `Omitted ${name}: insufficient space`)], rank: index + 1,
+      currency: 'PHP',
+      pros: candidate.designChecks
+        ? candidate.designChecks.filter(check => check.passed).map(check => check.rule)
+        : ['Furniture fits room bounds', 'No furniture overlaps', 'Required items included'],
+      cons: [
+        ...(candidate.designChecks || []).filter(check => !check.passed).map(check => `Not met: ${check.rule}`),
+        ...warnings,
+        ...candidate.omitted.map(name => `Omitted ${name}: insufficient space`),
+      ],
+      designChecks: candidate.designChecks || null, rank: index + 1,
       rankingScore: candidate.rankScore, features: candidate.features,
     };
   });
   return {
     proposals, bestFitRecommendation: proposals[0], alternativeOptions: proposals.slice(1),
     metadata: { totalProposalsGenerated: proposals.length, processingTime: Date.now() - start,
-      algorithm: 'constraint-placement', rankingSource: ranking.source, modelVersion: ranking.modelVersion,
+      algorithm: optimized ? 'guideline-annealing' : 'constraint-placement', rankingSource: ranking.source, modelVersion: ranking.modelVersion,
       confidenceScore: null, currency: 'PHP', warnings },
     exportData: { json: JSON.stringify(proposals), structuredData: proposals },
   };

@@ -7,8 +7,11 @@ import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } f
 import { View, StyleSheet, PanResponder, Dimensions } from 'react-native';
 import * as THREE from 'three';
 import { GLView } from 'expo-gl';
+import { DeviceMotion, type DeviceMotionMeasurement } from 'expo-sensors';
 import { FurnitureModelLoader } from '@/services/FurnitureModelLoader';
+import { Renderer } from '@/utils/ExpoGLRenderer';
 import type { ARFurnitureItem } from './ARFurnitureRenderer';
+import type { FurnitureCategory } from '@/types/ar-view';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -24,14 +27,44 @@ export interface ARFurniturePlacementHandle {
   resetTransform: () => void;
   rotateLeft: () => void;
   rotateRight: () => void;
+  /** Turn the view so the current phone direction faces the furniture again */
+  recenter: () => void;
+}
+
+type DeviceRotation = DeviceMotionMeasurement['rotation'];
+
+// Device orientation to camera orientation, as in three.js DeviceOrientationControls:
+// the phone's screen looks along -Z of a camera rotated -90° about X.
+const SCREEN_TO_CAMERA = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+const deviceEuler = new THREE.Euler();
+
+function applyDeviceRotation(camera: THREE.Camera, rotation: DeviceRotation, yawOffset: number) {
+  deviceEuler.set(rotation.beta, rotation.alpha - yawOffset, -rotation.gamma, 'YXZ');
+  camera.quaternion.setFromEuler(deviceEuler).multiply(SCREEN_TO_CAMERA);
 }
 
 interface Props {
   furnitureItem: ARFurnitureItem | null;
   /** When set, the whole arrangement is placed and moved as one group instead of furnitureItem. */
   layoutItems?: ARLayoutItem[] | null;
+  /** 360° look-around: the furniture stays in place while the phone turns (gyroscope, no position tracking) */
+  lookAround?: boolean;
   onLoadingStateChange?: (isLoading: boolean) => void;
   onError?: (error: string) => void;
+}
+
+// Picks the procedural shape family from the item id (which starts with its catalog type)
+const CATEGORY_KEYWORDS: [FurnitureCategory, string[]][] = [
+  ['bedroom', ['bed']],
+  ['storage', ['nightstand', 'dresser', 'wardrobe', 'book', 'shelf', 'cabinet', 'tv-stand', 'buffet', 'island']],
+  ['tables', ['table', 'desk']],
+  ['lighting', ['lamp', 'light']],
+  ['decor', ['rug', 'plant', 'decor']],
+];
+
+export function proceduralCategory(id: string): FurnitureCategory {
+  const lower = id.toLowerCase();
+  return CATEGORY_KEYWORDS.find(([, words]) => words.some(word => lower.includes(word)))?.[0] ?? 'seating';
 }
 
 async function createFurnitureModel(furnitureItem: ARFurnitureItem): Promise<THREE.Object3D | null> {
@@ -62,9 +95,7 @@ async function createFurnitureModel(furnitureItem: ARFurnitureItem): Promise<THR
   }
 
   // Use procedural generation instead of loading broken remote models
-  const category = furnitureItem.id.includes('sofa') ? 'seating' :
-                   furnitureItem.id.includes('table') ? 'tables' :
-                   furnitureItem.id.includes('book') ? 'storage' : 'seating';
+  const category = proceduralCategory(furnitureItem.id);
 
   return modelLoader.createDetailedFurnitureModel({
     id: furnitureItem.id,
@@ -83,6 +114,7 @@ async function createFurnitureModel(furnitureItem: ARFurnitureItem): Promise<THR
 export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props>(({
   furnitureItem,
   layoutItems,
+  lookAround = true,
   onLoadingStateChange,
   onError
 }, ref) => {
@@ -120,6 +152,10 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
   const dragPlaneRef = useRef<THREE.Plane>(new THREE.Plane());
   const dragOffsetRef = useRef<THREE.Vector3>(new THREE.Vector3());
 
+  // Latest gyroscope orientation and the heading that faces the furniture
+  const deviceRotationRef = useRef<DeviceRotation | null>(null);
+  const yawOffsetRef = useRef<number | null>(null);
+
   useImperativeHandle(ref, () => ({
     resetTransform: () => {
       transformRef.current = {
@@ -136,8 +172,36 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
     rotateRight: () => {
       transformRef.current.rotationY -= Math.PI / 4; // 45 degrees
       updateFurnitureTransform();
-    }
+    },
+    recenter: () => {
+      yawOffsetRef.current = deviceRotationRef.current?.alpha ?? null;
+    },
   }));
+
+  // 360° look-around: follow the phone's orientation from the gyroscope
+  useEffect(() => {
+    deviceRotationRef.current = null;
+    yawOffsetRef.current = null;
+    if (!lookAround) return;
+    let active = true;
+    let subscription: { remove: () => void } | null = null;
+    DeviceMotion.isAvailableAsync()
+      .then(available => {
+        if (!available || !active) return;
+        DeviceMotion.setUpdateInterval(16);
+        subscription = DeviceMotion.addListener(({ rotation }) => {
+          if (!rotation) return;
+          // The first reading faces the furniture
+          if (yawOffsetRef.current === null) yawOffsetRef.current = rotation.alpha;
+          deviceRotationRef.current = rotation;
+        });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      subscription?.remove();
+    };
+  }, [lookAround]);
 
   // Update object transform
   const updateFurnitureTransform = () => {
@@ -176,13 +240,12 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
     cameraRef.current = camera;
 
     // Create renderer
-    const renderer = new THREE.WebGLRenderer({
-      context: gl,
+    const renderer = new Renderer({
+      gl,
       alpha: true, // Transparent background
       antialias: true,
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(gl.drawingBufferWidth / gl.drawingBufferWidth);
     renderer.setClearColor(0x000000, 0); // Transparent
     rendererRef.current = renderer;
 
@@ -276,6 +339,9 @@ export const ARFurniturePlacement = forwardRef<ARFurniturePlacementHandle, Props
     // Render loop
     const render = () => {
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
+        if (deviceRotationRef.current && yawOffsetRef.current !== null) {
+          applyDeviceRotation(cameraRef.current, deviceRotationRef.current, yawOffsetRef.current);
+        }
         rendererRef.current.render(sceneRef.current, cameraRef.current);
         gl.endFrameEXP();
       }

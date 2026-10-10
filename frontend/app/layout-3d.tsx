@@ -37,6 +37,9 @@ import { calculateArea } from '@/utils/layout3dExport';
 // Theme
 import { useTheme } from '@/contexts/ThemeContext';
 
+// Overlay text on the 3D viewer, whose background is always dark
+const VIEWER_TEXT = '#E5E7EB';
+
 export default function Layout3DScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -79,12 +82,16 @@ export default function Layout3DScreen() {
     glRef: scene.glRef,
   });
 
-  // Load design from params
+  // Load design from params. Depend on the param strings: the params object
+  // can be a new instance on every render, which would loop setState forever.
+  const designIdParam = params.designId as string | undefined;
+  const designDataParam = params.designData as string | undefined;
+  const roomDimensionsParam = params.roomDimensions as string | undefined;
   useEffect(() => {
     const { design: parsedDesign, dimensions: parsedDimensions } = parseDesignFromParams({
-      designId: params.designId as string,
-      designData: params.designData as string,
-      roomDimensions: params.roomDimensions as string,
+      designId: designIdParam,
+      designData: designDataParam,
+      roomDimensions: roomDimensionsParam,
     });
 
     if (parsedDesign) {
@@ -93,7 +100,7 @@ export default function Layout3DScreen() {
     if (parsedDimensions) {
       setRoomDimensions(parsedDimensions);
     }
-  }, [params]);
+  }, [designIdParam, designDataParam, roomDimensionsParam]);
 
   // Handle furniture tap
   const handleFurnitureTap = (event: any) => {
@@ -176,12 +183,12 @@ export default function Layout3DScreen() {
                   onPress={() => setViewMode(mode)}
                   hapticType="light"
                 >
-                  <Text style={[styles.viewModeText, { color: colors.textPrimary }, viewMode === mode && styles.viewModeTextActive]}>
+                  <Text style={[styles.viewModeText, { color: VIEWER_TEXT }, viewMode === mode && styles.viewModeTextActive]}>
                     {mode === 'top-down' ? 'Top-Down' : mode === 'orthographic' ? 'Ortho' : 'Perspective'}
                   </Text>
                 </AnimatedButton>
               ))}
-              {unityBuildUrl && (
+              {!!unityBuildUrl && (
                 <AnimatedButton
                   style={[styles.viewModeButton, useUnity && styles.viewModeButtonActive]}
                   onPress={() => setUseUnity(!useUnity)}
@@ -190,10 +197,10 @@ export default function Layout3DScreen() {
                   <Ionicons 
                     name={useUnity ? 'game-controller' : 'flash'} 
                     size={14} 
-                    color={colors.textPrimary} 
+                    color={VIEWER_TEXT} 
                     style={{ marginRight: 4 }}
                   />
-                  <Text style={[styles.viewModeText, { color: colors.textPrimary }, useUnity && styles.viewModeTextActive]}>
+                  <Text style={[styles.viewModeText, { color: VIEWER_TEXT }, useUnity && styles.viewModeTextActive]}>
                     {useUnity ? 'Unity' : 'Three.js'}
                   </Text>
                 </AnimatedButton>
@@ -209,10 +216,10 @@ export default function Layout3DScreen() {
                 <Ionicons 
                   name={showGrid ? 'grid' : 'grid-outline'} 
                   size={16} 
-                  color={colors.textPrimary} 
+                  color={VIEWER_TEXT} 
                   style={{ marginRight: 6 }}
                 />
-                <Text style={[styles.controlButtonText, { color: colors.textPrimary }]}>Grid</Text>
+                <Text style={[styles.controlButtonText, { color: VIEWER_TEXT }]}>Grid</Text>
               </AnimatedButton>
               <AnimatedButton
                 style={styles.controlButton}
@@ -222,10 +229,10 @@ export default function Layout3DScreen() {
                 <Ionicons 
                   name={showMeasurements ? 'resize' : 'resize-outline'} 
                   size={16} 
-                  color={colors.textPrimary} 
+                  color={VIEWER_TEXT} 
                   style={{ marginRight: 6 }}
                 />
-                <Text style={[styles.controlButtonText, { color: colors.textPrimary }]}>Measure</Text>
+                <Text style={[styles.controlButtonText, { color: VIEWER_TEXT }]}>Measure</Text>
               </AnimatedButton>
               <AnimatedButton
                 style={styles.controlButton}
@@ -235,10 +242,10 @@ export default function Layout3DScreen() {
                 <Ionicons 
                   name="refresh" 
                   size={16} 
-                  color={colors.textPrimary} 
+                  color={VIEWER_TEXT} 
                   style={{ marginRight: 6 }}
                 />
-                <Text style={[styles.controlButtonText, { color: colors.textPrimary }]}>Reset</Text>
+                <Text style={[styles.controlButtonText, { color: VIEWER_TEXT }]}>Reset</Text>
               </AnimatedButton>
             </View>
 
@@ -280,9 +287,23 @@ export default function Layout3DScreen() {
               <Text style={[styles.sectionTitle, { color: colors.textPrimary }]}>Room Details</Text>
               <InfoRow label="Dimensions" value={`${roomDimensions.width}m × ${roomDimensions.length}m × ${roomDimensions.height}m`} colors={colors} />
               <InfoRow label="Area" value={`${calculateArea(roomDimensions)} m²`} colors={colors} />
-              <InfoRow label="Furniture Items" value={`${design.layout.furniture.length} pieces`} colors={colors} />
-              <InfoRow label="Est. Cost" value={`${design.currency === 'PHP' ? '₱' : '$'}${design.estimatedCost.low.toLocaleString()} - ${design.currency === 'PHP' ? '₱' : '$'}${design.estimatedCost.high.toLocaleString()}`} colors={colors} />
-              <InfoRow label="Performance Score" value={`${design.performanceScore.overall.toFixed(0)}/100`} colors={colors} />
+              <InfoRow label="Furniture Items" value={`${design.layout?.furniture?.length ?? 0} pieces`} colors={colors} />
+              {design.estimatedCost && (
+                <InfoRow
+                  label="Est. Cost"
+                  value={(() => {
+                    const symbol = design.currency === 'PHP' ? '₱' : '$';
+                    const { low, high } = design.estimatedCost;
+                    return low === high
+                      ? `${symbol}${low.toLocaleString()}`
+                      : `${symbol}${low.toLocaleString()} - ${symbol}${high.toLocaleString()}`;
+                  })()}
+                  colors={colors}
+                />
+              )}
+              {design.performanceScore && (
+                <InfoRow label="Performance Score" value={`${design.performanceScore.overall.toFixed(0)}/100`} colors={colors} />
+              )}
             </View>
           </FadeInView>
         )}

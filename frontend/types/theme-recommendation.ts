@@ -1,14 +1,7 @@
 // Theme Recommendation Module Types
 
-export type RoomType = 
-  | 'Living Room'
-  | 'Bedroom'
-  | 'Kitchen'
-  | 'Bathroom'
-  | 'Office'
-  | 'Dining Room'
-  | 'Kids Room'
-  | 'Outdoor';
+export type { RoomType, DesignStyle } from './project';
+import type { RoomType, DesignStyle } from './project';
 
 export type DesignMood = 
   | 'Cozy'
@@ -20,17 +13,6 @@ export type DesignMood =
   | 'Playful'
   | 'Professional';
 
-export type DesignStyle = 
-  | 'Modern'
-  | 'Contemporary'
-  | 'Minimalist'
-  | 'Scandinavian'
-  | 'Industrial'
-  | 'Bohemian'
-  | 'Traditional'
-  | 'Rustic'
-  | 'Mid-Century'
-  | 'Eclectic';
 
 export type MaterialType = 
   | 'wood'

@@ -17,6 +17,16 @@ export async function callML(path, body) {
   return response.json();
 }
 
+// Design-guideline layout optimizer; null when the ML service is unavailable
+export async function optimizeLayouts(request) {
+  try {
+    const result = await callML('/optimize-layout', request);
+    return Array.isArray(result?.layouts) && result.layouts.length ? result : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function rankCandidates(candidates) {
   try {
     const result = await callML('/rank', { candidates });

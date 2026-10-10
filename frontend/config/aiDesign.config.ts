@@ -3,24 +3,6 @@
  * Constants and configuration for the AI Design feature
  */
 
-export const DESIGN_STYLES = [
-  { id: '1', name: 'Modern', emoji: '🏢' },
-  { id: '2', name: 'Minimalist', emoji: '⬜' },
-  { id: '3', name: 'Scandinavian', emoji: '🌲' },
-  { id: '4', name: 'Industrial', emoji: '⚙️' },
-  { id: '5', name: 'Bohemian', emoji: '🌺' },
-  { id: '6', name: 'Traditional', emoji: '🏛️' },
-] as const;
-
-export const ROOM_TYPES = [
-  { id: '1', name: 'Living Room', emoji: '🛋️' },
-  { id: '2', name: 'Bedroom', emoji: '🛏️' },
-  { id: '3', name: 'Kitchen', emoji: '🍳' },
-  { id: '4', name: 'Bathroom', emoji: '🚿' },
-  { id: '5', name: 'Office', emoji: '💼' },
-  { id: '6', name: 'Dining Room', emoji: '🍽️' },
-] as const;
-
 export const BUDGET_OPTIONS = ['low', 'medium', 'high', 'luxury'] as const;
 
 export const OPTIMIZATION_GOALS = ['space', 'comfort', 'aesthetics', 'balanced'] as const;

@@ -110,6 +110,8 @@ export function useLayout3DScene({
       }
 
       rendererRef.current.render(sceneRef.current, cameraRef.current);
+      // Expo GL presents a frame on native only after endFrameEXP (no-op need on web)
+      glRef.current?.endFrameEXP?.();
       animationFrameRef.current = requestAnimationFrame(animate);
     } catch (error) {
       console.error('[Layout3DScene] Animation error:', error);

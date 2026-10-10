@@ -14,19 +14,11 @@ import { getHorizontalPadding } from '@/utils/responsive';
 import { projectService } from '@/services/ProjectService';
 import { callApi } from '@/services/apiClient';
 import NotificationService from '@/services/NotificationService';
-import type { Project, RoomType, ProjectStatus } from '@/types/project';
+import type { Project, ProjectStatus } from '@/types/project';
+import { ROOM_TYPES, ROOM_ICONS } from '@/constants/design';
 
-// Room types offered by Create Project; item counts come from the furniture catalog.
-const ROOMS: { type: RoomType; icon: string }[] = [
-  { type: 'Living Room', icon: 'tv' },
-  { type: 'Bedroom', icon: 'bed' },
-  { type: 'Kitchen', icon: 'cafe' },
-  { type: 'Bathroom', icon: 'water' },
-  { type: 'Office', icon: 'briefcase' },
-  { type: 'Dining Room', icon: 'restaurant' },
-  { type: 'Kids Room', icon: 'happy' },
-  { type: 'Outdoor', icon: 'leaf' },
-];
+// Item counts come from the furniture catalog.
+const ROOMS = ROOM_TYPES.map(type => ({ type, icon: ROOM_ICONS[type] }));
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   draft: 'Draft',

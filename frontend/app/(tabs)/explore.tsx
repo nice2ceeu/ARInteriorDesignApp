@@ -12,6 +12,7 @@ import { AnimatedCard, FadeInView, SlideInView, AnimatedButton } from '@/compone
 import { usePexelsSearch, type PexelsPhoto } from '@/hooks/usePexelsSearch';
 import { getHorizontalPadding, isSmallScreen } from '@/utils/responsive';
 import { savedItemsService } from '@/services/SavedItemsService';
+import { DESIGN_STYLES, STYLE_ICONS } from '@/constants/design';
 
 // Helper function to convert hex color to rgba with opacity
 const hexToRgba = (hex: string, alpha: number): string => {
@@ -38,18 +39,10 @@ const mainCategories: Category[] = [
 ];
 
 // Quick search categories (randomized, no navigation)
-const quickSearchCategories: Category[] = [
-  { id: 'modern', name: 'Modern', iconName: 'cube-outline', iconColor: '#10B981', count: 'Designs' },
-  { id: 'minimalist', name: 'Minimalist', iconName: 'apps-outline', iconColor: '#3B82F6', count: 'Designs' },
-  { id: 'cozy', name: 'Cozy', iconName: 'home-outline', iconColor: '#EF4444', count: 'Designs' },
-  { id: 'scandinavian', name: 'Scandinavian', iconName: 'snow-outline', iconColor: '#06B6D4', count: 'Designs' },
-  { id: 'industrial', name: 'Industrial', iconName: 'construct-outline', iconColor: '#78716C', count: 'Designs' },
-  { id: 'bohemian', name: 'Bohemian', iconName: 'flower-outline', iconColor: '#EC4899', count: 'Designs' },
-  { id: 'rustic', name: 'Rustic', iconName: 'leaf-outline', iconColor: '#16A34A', count: 'Designs' },
-  { id: 'luxury', name: 'Luxury', iconName: 'diamond-outline', iconColor: '#F59E0B', count: 'Designs' },
-  { id: 'vintage', name: 'Vintage', iconName: 'time-outline', iconColor: '#92400E', count: 'Designs' },
-  { id: 'contemporary', name: 'Contemporary', iconName: 'layers-outline', iconColor: '#6366F1', count: 'Designs' },
-];
+const STYLE_COLORS = ['#10B981', '#6366F1', '#3B82F6', '#06B6D4', '#78716C', '#EC4899', '#92400E', '#16A34A', '#F59E0B', '#EF4444'];
+const quickSearchCategories: Category[] = DESIGN_STYLES.map((style, index) => ({
+  id: style.toLowerCase(), name: style, iconName: STYLE_ICONS[style] as Category['iconName'], iconColor: STYLE_COLORS[index % STYLE_COLORS.length], count: 'Designs',
+}));
 
 // Helper function to shuffle array (Fisher-Yates shuffle)
 function shuffleArray<T>(array: T[]): T[] {

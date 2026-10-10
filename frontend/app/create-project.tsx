@@ -20,44 +20,13 @@ import { StatusBar } from 'expo-status-bar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { projectService } from '@/services/ProjectService';
 import type { RoomType, DesignStyle, CreateProjectInput } from '@/types/project';
+import { ROOM_TYPES, ROOM_EMOJIS, DESIGN_STYLES } from '@/constants/design';
 import { useTheme } from '@/contexts/ThemeContext';
 import { AnimatedButton, AnimatedCard, FadeInView, SlideInView, ScaleInView } from '@/components/interactive';
 import { getHorizontalPadding, isSmallScreen, getResponsiveFontSize, getResponsiveButtonHeight } from '@/utils/responsive';
 
-const ROOM_TYPES: RoomType[] = [
-  'Living Room',
-  'Bedroom',
-  'Kitchen',
-  'Bathroom',
-  'Office',
-  'Dining Room',
-  'Kids Room',
-  'Outdoor',
-];
 
-const ROOM_EMOJIS: Record<RoomType, string> = {
-  'Living Room': '🛋️',
-  'Bedroom': '🛏️',
-  'Kitchen': '🍳',
-  'Bathroom': '🚿',
-  'Office': '💼',
-  'Dining Room': '🍽️',
-  'Kids Room': '🧸',
-  'Outdoor': '🌳',
-};
 
-const DESIGN_STYLES: DesignStyle[] = [
-  'Modern',
-  'Contemporary',
-  'Minimalist',
-  'Scandinavian',
-  'Industrial',
-  'Bohemian',
-  'Traditional',
-  'Rustic',
-  'Mid-Century',
-  'Eclectic',
-];
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const getCardWidth = () => {

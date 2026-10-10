@@ -168,7 +168,7 @@ export default function ARFurnitureScreen() {
             if (layoutItems?.length) {
               Alert.alert(
                 'Proposed layout',
-                `${layoutItems.map(item => `• ${item.name}`).join('\n')}\n\nDrag to move the arrangement. It follows the camera view and is not anchored to the floor yet.`
+                `${layoutItems.map(item => `• ${item.name}`).join('\n')}\n\nTurn around to look at it from any direction, drag to move it, and tap the target button to face it again. It stays in place as you turn, but not when you walk.`
               );
             } else if (selectedFurniture) {
               Alert.alert(selectedFurniture.name, `Dimensions: ${selectedFurniture.dimensions.width}m x ${selectedFurniture.dimensions.height}m x ${selectedFurniture.dimensions.depth}m`);
@@ -191,9 +191,10 @@ export default function ARFurnitureScreen() {
         
         <TouchableOpacity 
           style={styles.floatingButton} 
-          onPress={() => Alert.alert('Capture', 'Scene captured! (Placeholder)')}
+          onPress={() => arPlacementRef.current?.recenter()}
+          accessibilityLabel="Recenter view"
         >
-          <Ionicons name="camera" size={24} color="#FFF" />
+          <Ionicons name="locate" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
     </View>

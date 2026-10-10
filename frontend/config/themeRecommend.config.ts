@@ -13,27 +13,7 @@ import type {
 // ROOM, MOOD, STYLE OPTIONS
 // ============================================================================
 
-export const ROOM_TYPES: readonly RoomType[] = [
-  'Living Room',
-  'Bedroom',
-  'Kitchen',
-  'Bathroom',
-  'Office',
-  'Dining Room',
-  'Kids Room',
-  'Outdoor',
-] as const;
-
-export const ROOM_EMOJIS: Record<RoomType, string> = {
-  'Living Room': '🛍️',
-  'Bedroom': '🛏️',
-  'Kitchen': '🍳',
-  'Bathroom': '🚿',
-  'Office': '💼',
-  'Dining Room': '🍽️',
-  'Kids Room': '🧸',
-  'Outdoor': '🌳',
-} as const;
+export { ROOM_TYPES, ROOM_EMOJIS } from '@/constants/design';
 
 export const DESIGN_MOODS: readonly DesignMood[] = [
   'Cozy',
@@ -57,31 +37,7 @@ export const MOOD_EMOJIS: Record<DesignMood, string> = {
   'Professional': '💼',
 } as const;
 
-export const DESIGN_STYLES: readonly DesignStyle[] = [
-  'Modern',
-  'Contemporary',
-  'Minimalist',
-  'Scandinavian',
-  'Industrial',
-  'Bohemian',
-  'Traditional',
-  'Rustic',
-  'Mid-Century',
-  'Eclectic',
-] as const;
-
-export const STYLE_EMOJIS: Record<DesignStyle, string> = {
-  'Modern': '🏢',
-  'Contemporary': '🏙️',
-  'Minimalist': '⬜',
-  'Scandinavian': '🌲',
-  'Industrial': '⚙️',
-  'Bohemian': '🌺',
-  'Traditional': '🏛️',
-  'Rustic': '🪵',
-  'Mid-Century': '🕰️',
-  'Eclectic': '🎨',
-} as const;
+export { DESIGN_STYLES, STYLE_EMOJIS } from '@/constants/design';
 
 // ============================================================================
 // BUDGET OPTIONS

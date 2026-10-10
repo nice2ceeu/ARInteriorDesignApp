@@ -197,7 +197,7 @@ export const ThemeResultsView: React.FC<ThemeResultsViewProps> = ({
       >
         <View style={parentStyles.content}>
           {/* Learning Message */}
-          {learningMessage && (
+          {!!learningMessage && (
             <View style={parentStyles.learningBanner}>
               <Text style={parentStyles.learningText}>💡 {learningMessage}</Text>
               <TouchableOpacity

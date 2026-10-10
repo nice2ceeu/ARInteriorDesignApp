@@ -8,8 +8,22 @@ const request = {
   constraints: { fixedObstacles: [{ position: { x: 0, z: 0, rotation: 0 }, dimensions: { width: 1, length: 1, height: 2 } }] },
 };
 
+// Runs a test with the ML service mocked: handlers map an ML path to a JSON response or an Error
+async function withML(handlers, run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    const handler = handlers[new URL(url).pathname];
+    if (!handler) throw new Error('ML service offline');
+    const body = typeof handler === 'function' ? handler(JSON.parse(options.body)) : handler;
+    return { ok: true, json: async () => body };
+  };
+  try { return await run(); } finally { globalThis.fetch = originalFetch; }
+}
+
 test('generated variations obey measured boundaries, collisions, required items and PHP budget', async () => {
-  const output = await planLayouts(request);
+  const output = await withML({}, () => planLayouts(request));
+  assert.equal(output.metadata.algorithm, 'constraint-placement');
+  assert.ok(output.metadata.warnings.some(warning => warning.includes('optimizer is offline')));
   assert.equal(output.metadata.rankingSource, 'geometric');
   assert.equal(output.metadata.confidenceScore, null);
   assert.ok(output.proposals.length >= 2);
@@ -37,20 +51,48 @@ test('rejects invalid dimensions, unknown required items and impossible requirem
 });
 
 test('a trained ranking response determines ordering while malformed responses fall back honestly', async () => {
-  const originalFetch = globalThis.fetch;
-  try {
-    globalThis.fetch = async (url, options) => {
-      const count = JSON.parse(options.body).candidates.length;
-      return { ok: true, json: async () => ({ scores: Array.from({ length: count }, (_, index) => index), modelVersion: 'test-ranker' }) };
-    };
-    const output = await planLayouts(request);
-    assert.equal(output.metadata.rankingSource, 'xgboost');
-    assert.equal(output.metadata.modelVersion, 'test-ranker');
-    assert.ok(output.proposals[0].rankingScore > output.proposals[1].rankingScore);
-    globalThis.fetch = async () => ({ ok: true, json: async () => ({ scores: [NaN] }) });
-    const fallback = await planLayouts(request);
-    assert.equal(fallback.metadata.rankingSource, 'geometric');
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  const rank = ({ candidates }) => ({ scores: candidates.map((_, index) => index), modelVersion: 'test-ranker' });
+  const output = await withML({ '/rank': rank }, () => planLayouts(request));
+  assert.equal(output.metadata.rankingSource, 'xgboost');
+  assert.equal(output.metadata.modelVersion, 'test-ranker');
+  assert.ok(output.proposals[0].rankingScore > output.proposals[1].rankingScore);
+  const fallback = await withML({ '/rank': { scores: [NaN] } }, () => planLayouts(request));
+  assert.equal(fallback.metadata.rankingSource, 'geometric');
+});
+
+test('guideline-optimized layouts are used and explained, and malformed ones are rejected', async () => {
+  let sent;
+  const layout = (deskX, passed) => ({
+    furniture: [
+      { id: 'desk-0', x: deskX, z: 3.25, rotation: 180 },
+      { id: 'chair-0', x: deskX + 0.4, z: 2.6, rotation: 0 },
+    ],
+    score: passed ? 100 : 50, omitted: [],
+    checks: [{ rule: 'Writing Desk against a wall', passed: true }, { rule: 'Desk near the window for daylight', passed }],
+  });
+  const optimize = body => {
+    sent = body;
+    const ids = Object.fromEntries(body.items.map(item => [item.type, item.id]));
+    const rename = l => ({ ...l, furniture: l.furniture.map(f => ({ ...f, id: ids[f.id.split('-')[0]] })) });
+    return { layouts: [rename(layout(1.5, true)), rename(layout(3.5, false))] };
+  };
+  const withDoor = { ...request, requiredFurniture: ['desk', 'chair'], budgetPHP: 6300, constraints: {},
+    openings: [{ type: 'door', wall: 'south', offset: 0.2 }, { type: 'window', wall: 'north' }] };
+  const output = await withML({ '/optimize-layout': optimize }, () => planLayouts(withDoor));
+  assert.equal(output.metadata.algorithm, 'guideline-annealing');
+  assert.deepEqual(sent.openings, [
+    { type: 'door', wall: 'south', offset: 0.2, width: 0.9 },
+    { type: 'window', wall: 'north', offset: 0.5, width: 1.2 },
+  ]);
+  const [best, second] = output.proposals;
+  assert.equal(best.performanceScore.overall, 100);
+  assert.ok(best.pros.includes('Desk near the window for daylight'));
+  assert.ok(second.cons.includes('Not met: Desk near the window for daylight'));
+  assert.equal(best.layout.furniture.find(item => item.type === 'desk').position.rotation, 180);
+  assert.equal(best.designChecks.length, 2);
+
+  const outside = () => ({ layouts: [{ furniture: [{ id: 'desk-x', x: 9, z: 9, rotation: 0 }], checks: [], omitted: [] }] });
+  const rejected = await withML({ '/optimize-layout': outside }, () => planLayouts(withDoor));
+  assert.equal(rejected.metadata.algorithm, 'constraint-placement');
+  await assert.rejects(planLayouts({ ...withDoor, openings: [{ type: 'door', wall: 'up' }] }), { statusCode: 400 });
 });

@@ -33,6 +33,7 @@ import {
   type GeneratedLayoutResult as GeneratedLayout,
 } from '@/utils/generatedLayout';
 import type { DesignStyle, FinalDesign, RoomType } from '@/types/project';
+import { ROOM_TYPES, DESIGN_STYLES, ROOM_EMOJIS, isRoomType, isDesignStyle } from '@/constants/design';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -51,8 +52,16 @@ const OBSTACLE_OPTIONS = [
   { label: '🔥 Fireplace', value: 'fireplace' },
 ];
 
-const ROOM_TYPES = ['Bedroom', 'Living Room', 'Dining Area', 'Office'];
-const STYLE_OPTIONS = ['Minimalist', 'Modern', 'Traditional', 'Scandinavian', 'Industrial'];
+// Walls as seen on the top-down floor plan
+type Wall = 'north' | 'east' | 'south' | 'west';
+const WALL_OPTIONS: { label: string; value: Wall }[] = [
+  { label: 'Top', value: 'north' },
+  { label: 'Right', value: 'east' },
+  { label: 'Bottom', value: 'south' },
+  { label: 'Left', value: 'west' },
+];
+const OPENING_TYPES = ['door', 'window'] as const;
+
 
 // ─── Main Component ─────────────────────────────────────────────────────────────
 
@@ -72,6 +81,10 @@ export default function AIDesignModule() {
   const [depthInput, setDepthInput] = useState('');
   const [heightInput, setHeightInput] = useState('');
   const [selectedObstacles, setSelectedObstacles] = useState<string[]>([]);
+  const [openingWalls, setOpeningWalls] = useState<Record<'door' | 'window', Wall>>({ door: 'south', window: 'north' });
+  const openings = OPENING_TYPES
+    .filter(type => selectedObstacles.includes(type))
+    .map(type => ({ type, wall: openingWalls[type] }));
 
   // ── Step 2: Preferences ──
   const [roomType, setRoomType] = useState('');
@@ -81,6 +94,17 @@ export default function AIDesignModule() {
   const [requiredFurniture, setRequiredFurniture] = useState<string[]>([]);
   const [detectedLabels, setDetectedLabels] = useState<string[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [roomItemCounts, setRoomItemCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    let active = true;
+    callApi<{ rooms: { roomType: string; itemCount: number }[] }>('/designs/rooms', { maxRetries: 0 })
+      .then(summary => {
+        if (active) setRoomItemCounts(Object.fromEntries(summary.rooms.map(room => [room.roomType, room.itemCount])));
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const hasFurniture = (room: RoomType) => roomItemCounts === null || (roomItemCounts[room] ?? 0) > 0;
   useEffect(() => {
     let active = true;
     setRequiredFurniture([]);
@@ -105,9 +129,8 @@ export default function AIDesignModule() {
         setDepthInput(String(project.dimensions.length));
         setHeightInput(String(project.dimensions.height));
       }
-      const projectRoom = project.roomType === 'Dining Room' ? 'Dining Area' : project.roomType;
-      if (ROOM_TYPES.includes(projectRoom)) setRoomType(projectRoom);
-      if (project.style && STYLE_OPTIONS.includes(project.style)) setStyle(project.style);
+      if (isRoomType(project.roomType)) setRoomType(project.roomType);
+      if (isDesignStyle(project.style)) setStyle(project.style);
     });
     return () => { active = false; };
   }, [projectId]);
@@ -171,6 +194,7 @@ export default function AIDesignModule() {
         body: {
           roomDimensions: { width: roomWidth, height: roomHeight, depth: roomDepth },
           detectedObstacles: [...new Set([...selectedObstacles, ...detectedLabels])],
+          openings,
           availableFloorSpace,
           roomType,
           style,
@@ -248,7 +272,7 @@ export default function AIDesignModule() {
       const existing = projectId ? await projectService.getProjectById(projectId) : null;
       const project = existing ?? await projectService.createProject({
         name: design.title,
-        roomType: (roomType === 'Dining Area' ? 'Dining Room' : roomType) as RoomType,
+        roomType: roomType as RoomType,
         style: style as DesignStyle,
         dimensions: room,
       });
@@ -361,6 +385,28 @@ export default function AIDesignModule() {
             );
           })}
         </View>
+        {OPENING_TYPES.filter(type => selectedObstacles.includes(type)).map(type => (
+          <View key={type} style={styles.wallPicker}>
+            <Text style={[styles.wallPickerLabel, { color: colors.textSecondary }]}>
+              {type === 'door' ? '🚪 Door' : '🪟 Window'} is on the
+            </Text>
+            <View style={styles.wallPickerOptions}>
+              {WALL_OPTIONS.map(option => {
+                const selected = openingWalls[type] === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.wallOption, { borderColor: selected ? colors.accent : colors.border },
+                      selected && { backgroundColor: colors.accent }]}
+                    onPress={() => setOpeningWalls(previous => ({ ...previous, [type]: option.value }))}
+                  >
+                    <Text style={[styles.wallOptionText, { color: selected ? '#fff' : colors.textPrimary }]}>{option.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ))}
       </View>
 
       <TouchableOpacity
@@ -392,26 +438,31 @@ export default function AIDesignModule() {
 
         <Text style={[styles.label, { color: colors.textPrimary }]}>Room Type</Text>
         <View style={styles.chipRow}>
-          {ROOM_TYPES.map(type => (
-            <TouchableOpacity
-              key={type}
-              style={[
-                styles.chip,
-                { borderColor: roomType === type ? colors.accent : colors.border },
-                roomType === type && { backgroundColor: colors.accent },
-              ]}
-              onPress={() => setRoomType(type)}
-            >
-              <Text style={[styles.chipText, { color: roomType === type ? '#fff' : colors.textPrimary }]}>
-                {type}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {ROOM_TYPES.map(type => {
+            const available = hasFurniture(type);
+            return (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.chip,
+                  { borderColor: roomType === type ? colors.accent : colors.border },
+                  roomType === type && { backgroundColor: colors.accent },
+                  !available && styles.chipDisabled,
+                ]}
+                onPress={() => available && setRoomType(type)}
+                disabled={!available}
+              >
+                <Text style={[styles.chipText, { color: roomType === type ? '#fff' : colors.textPrimary }]}>
+                  {ROOM_EMOJIS[type]} {type}{available ? '' : ' · no furniture yet'}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         <Text style={[styles.label, { color: colors.textPrimary }]}>Style Preference</Text>
         <View style={styles.chipRow}>
-          {STYLE_OPTIONS.map(sty => (
+          {DESIGN_STYLES.map(sty => (
             <TouchableOpacity
               key={sty}
               style={[
@@ -514,13 +565,28 @@ export default function AIDesignModule() {
           roomDimensions={{ width: roomWidth, height: roomHeight, depth: roomDepth }}
           furniture={activeLayout.furniture}
           obstacles={selectedObstacles}
+          openings={openings}
         />
 
-        {/* Safety Warnings */}
-        {activeLayout.safety_warnings && activeLayout.safety_warnings.length > 0 && (
+        {/* Interior design rules this layout meets */}
+        {!!activeLayout.designChecks?.length && (
+          <View style={[styles.card, { backgroundColor: colors.surfacePrimary, borderColor: colors.border }]}>
+            <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
+              Design rules met: {activeLayout.designChecks.filter(check => check.passed).length} of {activeLayout.designChecks.length}
+            </Text>
+            {activeLayout.designChecks.map(check => (
+              <Text key={check.rule} style={[styles.checkText, { color: check.passed ? colors.textPrimary : '#ef4444' }]}>
+                {check.passed ? '✓' : '✗'}  {check.rule}
+              </Text>
+            ))}
+          </View>
+        )}
+
+        {/* Safety Warnings (unmet rules are listed above) */}
+        {activeLayout.safety_warnings?.some(w => !w.startsWith('Not met:')) && (
           <View style={styles.warningCard}>
             <Text style={styles.warningTitle}>⚠️ Safety Warnings</Text>
-            {activeLayout.safety_warnings.map((w, i) => (
+            {activeLayout.safety_warnings.filter(w => !w.startsWith('Not met:')).map((w, i) => (
               <Text key={i} style={styles.warningText}>• {w}</Text>
             ))}
           </View>
@@ -702,6 +768,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   obstacleChipText: { fontSize: 13, fontWeight: '600' },
+  chipDisabled: { opacity: 0.45 },
+  wallPicker: { marginTop: 14 },
+  wallPickerLabel: { fontSize: 13, fontWeight: '600', marginBottom: 8 },
+  wallPickerOptions: { flexDirection: 'row', gap: 8 },
+  wallOption: { flex: 1, paddingVertical: 8, borderRadius: 10, borderWidth: 1.5, alignItems: 'center' },
+  wallOptionText: { fontSize: 13, fontWeight: '600' },
+  checkText: { fontSize: 14, lineHeight: 22 },
 
   // Summary Banner
   summaryBanner: {

@@ -32,6 +32,8 @@ export interface GeneratedLayoutResult {
   score: number;
   estimatedCostPHP: number;
   rankingSource: 'geometric' | 'xgboost';
+  /** Interior design rules checked by the layout optimizer; null when it was offline */
+  designChecks?: { rule: string; passed: boolean }[] | null;
 }
 
 export interface LayoutContext {
@@ -90,7 +92,7 @@ export function toDesignProposal(layout: GeneratedLayoutResult, { room, roomType
     colorPalette: [...new Set(layout.furniture.map(item => item.color).filter(Boolean))],
     recommendedFurniture: furniture,
     estimatedCost: { low: cost, mid: cost, high: cost },
-    pros: [],
+    pros: (layout.designChecks ?? []).filter(check => check.passed).map(check => check.rule),
     cons: layout.safety_warnings,
     rank: 1,
     currency: 'PHP',
