@@ -1,7 +1,7 @@
 import { ApiError, callApi } from './apiClient';
 import { designItemColor } from '@/utils/designItemColors';
 import { mapFurnitureIdToUnity } from '@/config/unity-furniture-map';
-import { roomLocalToUnity } from '@/utils/roomLocalToUnity';
+import { footprintForRotation, roomLocalToUnity } from '@/utils/roomLocalToUnity';
 import type { DesignProposal, FurnitureItem, GenerativeDesignOutput } from '@/types/ai-design';
 import type {
   CustomizedDesignLayout,
@@ -270,9 +270,11 @@ export function designProposalToLegacy(
       id: `layout-${proposal.id}`,
       version: 1,
       furniture: proposal.items.map((item, index) => {
-        const rotated = item.rotationY % 180 !== 0;
-        const footprintW = rotated ? item.depth : item.width;
-        const footprintD = rotated ? item.width : item.depth;
+        // Quarter turns swap the footprint, rounded as AR does: angles back from AR are a hair off
+        // (179.99°), and `% 180` swapped those and moved the piece (2026-11-12).
+        const foot = footprintForRotation({ width: item.width, depth: item.depth }, item.rotationY);
+        const footprintW = foot.width;
+        const footprintD = foot.depth;
         return {
           id: item.instanceId || item.furnitureId || `item-${index}`,
           type: item.category,

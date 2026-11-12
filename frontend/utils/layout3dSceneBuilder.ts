@@ -5,6 +5,7 @@
 
 import * as THREE from 'three';
 import type { RoomDimensions, Layout3DFurnitureItem } from '@/types/layout-3d';
+import { threePose } from '@/utils/planView';
 import {
   WALL_CONFIG,
   FLOOR_CONFIG,
@@ -269,16 +270,10 @@ export function createFurnitureMesh(item: Layout3DFurnitureItem): THREE.Mesh | n
   const mesh = new THREE.Mesh(geometry, material);
   
   // Position
-  mesh.position.set(
-    item.position?.x || 0,
-    height / 2, // Place on floor
-    item.position?.z || 0
-  );
-  
-  // Rotation (convert degrees to radians if needed)
-  if (item.position?.rotation) {
-    mesh.rotation.y = item.position.rotation * (Math.PI / 180);
-  }
+  // AR's pose in this right-handed scene, so it isn't the room's mirror image (utils/planView).
+  const pose = threePose({ x: item.position?.x || 0, z: item.position?.z || 0, rotation: item.position?.rotation });
+  mesh.position.set(pose.x, height / 2, pose.z);
+  mesh.rotation.y = pose.rotationY;
   
   // Shadows
   mesh.castShadow = true;

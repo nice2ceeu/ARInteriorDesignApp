@@ -142,9 +142,12 @@ public class ReactNativeUnityViewManager extends ReactNativeUnityViewManagerSpec
 
   @Override
   public void unloadUnity(ReactNativeUnityView view) {
-    if (isUnityReady()) {
-      unload();
-    }
+    // The JS UnityView sends this from componentWillUnmount, on every AR screen that closes. Unity
+    // was then unloaded while the next AR screen was already showing it, and restarted from its
+    // first scene (ARDesignScene): scenes switched four times in a second, the camera restarted
+    // each time and sometimes stayed black, and opening a saved design lagged (2026-11-12).
+    // Unity stays loaded and is reused by the next screen; leaving AR already pauses it
+    // (onDropViewInstance, and the app pauses it before it navigates away).
   }
 
   @Override

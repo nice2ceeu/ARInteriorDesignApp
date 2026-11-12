@@ -20,6 +20,7 @@ const WALKWAY = 0.6;    // minimum clear walkway width
 const NEAR_WALL = 0.12; // tolerance for "against the wall"
 const WALL_GAP = 0.05;  // gap kept between furniture and walls
 const ITEM_GAP = 0.3;   // clearance between unrelated pieces
+const PARTNER_GAP = 0.03; // between pieces that go together (side table, nightstand, chairs: 5 cm by design)
 const DOOR_APPROACH = 0.4;
 
 // Furniture whose back belongs against a wall
@@ -78,13 +79,28 @@ function intersection(a, b) {
 const grow = (r, p) => ({ x: r.x - p, z: r.z - p, w: r.w + 2 * p, d: r.d + 2 * p });
 const center = (r) => ({ x: r.x + r.w / 2, z: r.z + r.d / 2 });
 
-/** Where an armchair should look: the floor in front of a sofa, or the middle of a coffee table. */
-function seatTarget(anchor, anchorPose) {
+/**
+ * Where an armchair at `from` should look: the floor in front of a sofa, or the middle of a coffee
+ * table. A chair out past that floor, straight in front of the sofa, looks back at the sofa: facing
+ * the point turned it away from the sofa, its back against the sofa's front (2026-11-12).
+ */
+function seatTarget(anchor, anchorPose, from) {
   const c = center(rectOf(anchor, anchorPose));
   if (anchor.role !== 'sofa') return c;
   const [fx, fz] = FRONT[anchorPose.rot];
   const reach = dims(anchor, 0).d / 2 + 0.8;
+  if (from && (from.x - c.x) * fx + (from.z - c.z) * fz >= reach) return c;
   return { x: c.x + fx * reach, z: c.z + fz * reach };
+}
+
+/**
+ * How near (centre to centre) an armchair belongs to its seating. The fixed 1.3 m was only
+ * reachable with a deep sofa set and a large accent chair touching (a 1.64 m set and a 1.21 m chair
+ * ended up pressed together), so it grows with the two pieces.
+ */
+function nearDistance(dep, anchor, offset) {
+  if (dep.role !== 'armchair') return offset;
+  return Math.max(offset, anchor.length / 2 + Math.max(dep.width, dep.length) / 2 + 0.45);
 }
 
 /** The piece faces `point` to within about 70°. */
@@ -205,7 +221,7 @@ function relationCost(dep, depPose, anchor, anchorPose, relation, offset) {
       return Math.abs(Math.abs(u) - (aw / 2 + dep.width / 2 + offset))
         + Math.max(0, Math.abs(v - anchor.length / 2) - anchor.length / 2);
     case 'around': return Math.max(0, gapBetween(depRect, anchorRect) - offset);
-    case 'near': return Math.max(0, dist(center(depRect), center(anchorRect)) - offset);
+    case 'near': return Math.max(0, dist(center(depRect), center(anchorRect)) - nearDistance(dep, anchor, offset));
     default: return 0;
   }
 }
@@ -230,12 +246,13 @@ function idealPose(dep, anchor, anchorPose, relation, offset, rng) {
   } else {
     const angle = rng() * 2 * Math.PI;
     const c = center(rectOf(anchor, anchorPose));
-    const px = c.x + offset * Math.cos(angle);
-    const pz = c.z + offset * Math.sin(angle);
+    const near = nearDistance(dep, anchor, offset);
+    const px = c.x + near * Math.cos(angle);
+    const pz = c.z + near * Math.sin(angle);
     // An armchair turns towards the seating; other pieces keep the anchor's direction.
     let rot = ar;
     if (dep.role === 'armchair') {
-      const t = seatTarget(anchor, anchorPose);
+      const t = seatTarget(anchor, anchorPose, { x: px, z: pz });
       const toward = (r) => (t.x - px) * FRONT[r][0] + (t.z - pz) * FRONT[r][1];
       rot = ROTATIONS.reduce((best, r) => (toward(r) > toward(best) ? r : best), ar);
     }
@@ -434,7 +451,9 @@ function createScorer(room, items, features) {
     for (let i = 0; i < items.length; i += 1) {
       for (let j = i + 1; j < all.length; j += 1) {
         // A fixed piece keeps a full gap (as an obstacle did), unless the new piece belongs with it.
-        const pad = partners[i].has(j) ? 0 : j < moving ? ITEM_GAP / 2 : ITEM_GAP;
+        // Pieces that go together still keep a few centimetres: touching ones show as overlapping
+        // in AR, where the boxes are the models' own (2026-11-12).
+        const pad = partners[i].has(j) ? PARTNER_GAP / 2 : j < moving ? ITEM_GAP / 2 : ITEM_GAP;
         terms.overlap += j < moving
           ? intersection(grow(rects[i], pad), grow(rects[j], pad))
           : intersection(grow(rects[i], pad), rects[j]);
@@ -475,7 +494,7 @@ function createScorer(room, items, features) {
       }
       // An armchair turns towards the seating it is near: "near" alone let it face the wall.
       if (items[i].role === 'armchair') {
-        const facing = facesTowards(rects[i], poses[i].rot, seatTarget(all[bestJ], poses[bestJ]));
+        const facing = facesTowards(rects[i], poses[i].rot, seatTarget(all[bestJ], poses[bestJ], center(rects[i])));
         terms.facing += facing ? 0 : 1;
         if (explain) checks.push({ rule: `${items[i].name} faces the seating`, passed: facing });
       }

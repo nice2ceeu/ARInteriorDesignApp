@@ -1,5 +1,5 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { generationForSavedLayout, layoutEdited, requestArViewOnly, takeArViewOnlyRequest } from '@/utils/savedDesignAr';
+import { generationForSavedLayout, layoutEdited } from '@/utils/savedDesignAr';
 import { buildApplyLayoutRequest } from '@/services/DesignFlowService';
 import { roomLocalToUnity, unityToRoomLocal } from '@/utils/roomLocalToUnity';
 import type {
@@ -121,14 +121,5 @@ describe('layoutEdited', () => {
     const local = unityToRoomLocal({ x: pose.x, z: pose.z }, pose.rotationY, size, room);
     const back = piece('sofa', local.x, local.z, { rotationY: pose.rotationY });
     expect(layoutEdited(layout([original]), layout([back]))).toBe(false);
-  });
-});
-
-describe('view-only request', () => {
-  it('is taken once, by the AR screen coming back into focus', () => {
-    expect(takeArViewOnlyRequest()).toBe(false);
-    requestArViewOnly();
-    expect(takeArViewOnlyRequest()).toBe(true);
-    expect(takeArViewOnlyRequest()).toBe(false);
   });
 });

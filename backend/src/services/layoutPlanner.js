@@ -11,6 +11,8 @@ import { insidePolygon, pointInPolygon } from '../utils/roomGeometry.js';
 import { optimizeLayout } from './layoutOptimizer.js';
 
 const PAD = 0.05;
+/** Least gap (m) between pieces of different groups: touching pieces show as overlapping in AR. */
+const PIECE_GAP = 0.03;
 const WALKWAY = 0.6;
 const GRID_CELL = 0.2;
 const ATTEMPTS_PER_LAYOUT = 30;
@@ -451,7 +453,8 @@ function isValidPlacement(candidate, placed, room, strict, features = NO_FEATURE
       return false;
     }
     for (const other of placed) {
-      if (other.items.some((o) => rectsOverlap(item.rect, o.rect))) return false;
+      // A few centimetres between pieces of different groups: touching ones show as overlapping in AR.
+      if (other.items.some((o) => rectsOverlap(item.rect, o.rect, -PIECE_GAP))) return false;
       // A coffee table set in front of its sofa belongs in the sofa's walkway.
       if (strict && other.group.key !== candidate.anchorGroupKey && other.zones.some((z) => rectsOverlap(item.rect, z))) {
         return false;

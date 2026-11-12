@@ -1,10 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useId, useMemo, useState } from 'react';
 import { View, StyleSheet, type LayoutChangeEvent } from 'react-native';
-import Svg, { G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { ClipPath, Defs, G, Line, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { AppText } from '@/components/ui/Text';
 import { useTheme } from '@/contexts/ThemeContext';
 import { designItemColor } from '@/utils/designItemColors';
 import type { DesignLayoutItem, ScannedOpening, ScannedRoom } from '@/types/design-flow';
+import { planFootprint, planX } from '@/utils/planView';
 
 interface FloorPlanPreviewProps {
   widthM: number;
@@ -158,19 +159,20 @@ function existingAsItem(piece: ScannedRoom['existingFurniture'][number]): Design
  * A door or window on the wall, in plan pixels: the wall is cut open where it is, a window
  * gets a line across the gap and a door its leaf and swing into the room.
  */
-function OpeningMark({ opening, kind, scale, roomW, roomH, wall, floor, line }: {
+function OpeningMark({ opening, kind, scale, widthM, roomW, roomH, wall, floor, line }: {
   opening: ScannedOpening;
   kind: 'door' | 'window';
   scale: number;
+  widthM: number;
   roomW: number;
   roomH: number;
   wall: number;
   floor: string;
   line: string;
 }) {
-  const x1 = opening.x1 * scale;
+  const x1 = planX(opening.x1, widthM) * scale;
   const y1 = opening.z1 * scale;
-  const x2 = opening.x2 * scale;
+  const x2 = planX(opening.x2, widthM) * scale;
   const y2 = opening.z2 * scale;
   const length = Math.hypot(x2 - x1, y2 - y1);
   if (length < 2) return null;
@@ -210,6 +212,7 @@ function OpeningMark({ opening, kind, scale, roomW, roomH, wall, floor, line }: 
  * Top view of a room layout: floor grid, walls, dimensions and furniture symbols drawn
  * to scale, sized to the available width. With a scanned room, your own furniture is drawn
  * grey and the doors and windows sit on the walls, as the layout was planned around them.
+ * Drawn the way round the room really is (see utils/planView), and in the scanned shape.
  */
 export function FloorPlanPreview({
   widthM,
@@ -220,6 +223,8 @@ export function FloorPlanPreview({
 }: FloorPlanPreviewProps) {
   const { colors, isDark } = useTheme();
   const [containerWidth, setContainerWidth] = useState(0);
+  // One per plan: a screen can show several.
+  const clipId = `room-floor-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const safeW = widthM > 0 ? widthM : 4;
   const safeL = lengthM > 0 ? lengthM : 5;
 
@@ -250,6 +255,14 @@ export function FloorPlanPreview({
   const solidCount = items.filter((item) => symbolKind(item) !== 'rug').length;
   const ordered = [...items].sort((a, b) => Number(symbolKind(b) === 'rug') - Number(symbolKind(a) === 'rug'));
   const existing = useMemo(() => (scannedRoom?.existingFurniture || []).map(existingAsItem), [scannedRoom]);
+  const outline = useMemo(() => {
+    const points = scannedRoom?.outline;
+    if (!points || points.length < 3) return null;
+    const fits = points.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z)
+      && p.x >= -0.05 && p.z >= -0.05 && p.x <= safeW + 0.05 && p.z <= safeL + 0.05);
+    if (!fits) return null;
+    return points.map((p) => `${planX(p.x, safeW) * plan.scale},${p.z * plan.scale}`).join(' ');
+  }, [plan.scale, safeL, safeW, scannedRoom]);
   const doors = scannedRoom?.doors || [];
   const windows = scannedRoom?.windows || [];
   const scanParts = [
@@ -283,19 +296,36 @@ export function FloorPlanPreview({
           {formatMeters(safeL)}
         </SvgText>
 
+        {outline ? (
+          <Defs>
+            <ClipPath id={clipId}>
+              <Polygon points={outline} />
+            </ClipPath>
+          </Defs>
+        ) : null}
+
         <G transform={`translate(${LABEL_PAD}, ${LABEL_PAD})`}>
-          <Rect x={0} y={0} width={plan.roomW} height={plan.roomH} fill={floor} />
-          {gridLines}
+          {outline ? (
+            <G>
+              <Polygon points={outline} fill={floor} />
+              <G clipPath={`url(#${clipId})`}>{gridLines}</G>
+            </G>
+          ) : (
+            <G>
+              <Rect x={0} y={0} width={plan.roomW} height={plan.roomH} fill={floor} />
+              {gridLines}
+            </G>
+          )}
 
           {existing.map((item) => {
             const w = item.width * plan.scale;
             const d = item.depth * plan.scale;
-            const rotated = item.rotationY % 180 !== 0;
-            const cx = item.localPosition.x * plan.scale + (rotated ? d : w) / 2;
-            const cz = item.localPosition.z * plan.scale + (rotated ? w : d) / 2;
+            const foot = planFootprint(item, safeW);
+            const cx = foot.centerX * plan.scale;
+            const cz = foot.centerZ * plan.scale;
             return (
               <G key={item.instanceId}
-                transform={`translate(${cx}, ${cz}) rotate(${-item.rotationY}) translate(${-w / 2}, ${-d / 2})`}>
+                transform={`translate(${cx}, ${cz}) rotate(${item.rotationY}) translate(${-w / 2}, ${-d / 2})`}>
                 <FurnitureSymbol kind={symbolKind(item)} w={w} d={d} color={EXISTING_COLOR} line={1} />
               </G>
             );
@@ -305,16 +335,15 @@ export function FloorPlanPreview({
             const kind = symbolKind(item);
             const w = item.width * plan.scale;
             const d = item.depth * plan.scale;
-            const rotated = item.rotationY % 180 !== 0;
-            const footW = rotated ? d : w;
-            const footD = rotated ? w : d;
-            const cx = item.localPosition.x * plan.scale + footW / 2;
-            const cz = item.localPosition.z * plan.scale + footD / 2;
+            const foot = planFootprint(item, safeW);
+            const cx = foot.centerX * plan.scale;
+            const cz = foot.centerZ * plan.scale;
             const color = designItemColor(items.indexOf(item), item.category, item.role);
-            // Rotation 0 faces +z (down the plan); SVG rotates clockwise, so negate.
+            // Rotation 0 faces +z (down the plan); with x running right to left, AR's turn is a
+            // clockwise SVG turn (utils/planView).
             return (
               <G key={item.instanceId || index}
-                transform={`translate(${cx}, ${cz}) rotate(${-item.rotationY}) translate(${-w / 2}, ${-d / 2})`}>
+                transform={`translate(${cx}, ${cz}) rotate(${item.rotationY}) translate(${-w / 2}, ${-d / 2})`}>
                 <FurnitureSymbol kind={kind} w={w} d={d} color={color} line={1.2} />
               </G>
             );
@@ -322,32 +351,37 @@ export function FloorPlanPreview({
 
           {[...existing, ...ordered].map((item, index) => {
             if (symbolKind(item) === 'rug') return null;
-            const rotated = item.rotationY % 180 !== 0;
-            const footW = (rotated ? item.depth : item.width) * plan.scale;
-            const footD = (rotated ? item.width : item.depth) * plan.scale;
+            const foot = planFootprint(item, safeW);
+            const footW = foot.width * plan.scale;
+            const footD = foot.depth * plan.scale;
             if (footW < 34 || footD < 16) return null;
             const fontSize = Math.max(7, Math.min(11, Math.min(footW, footD) * 0.2));
             const label = shortName(item.displayName, Math.floor(footW / (fontSize * 0.6)));
             return (
               <SvgText key={`label-${item.instanceId || index}`}
-                x={item.localPosition.x * plan.scale + footW / 2}
-                y={item.localPosition.z * plan.scale + footD / 2 + fontSize * 0.35}
+                x={foot.centerX * plan.scale}
+                y={foot.centerZ * plan.scale + fontSize * 0.35}
                 fontSize={fontSize} fontWeight="600" fill={colors.textPrimary} textAnchor="middle">
                 {label}
               </SvgText>
             );
           })}
 
-          <Rect x={0} y={0} width={plan.roomW} height={plan.roomH} fill="none" stroke={wallColor}
-            strokeWidth={plan.wall} />
+          {outline ? (
+            <Polygon points={outline} fill="none" stroke={wallColor} strokeWidth={plan.wall}
+              strokeLinejoin="round" />
+          ) : (
+            <Rect x={0} y={0} width={plan.roomW} height={plan.roomH} fill="none" stroke={wallColor}
+              strokeWidth={plan.wall} />
+          )}
 
           {doors.map((door) => (
             <OpeningMark key={`door-${door.id}`} opening={door} kind="door" scale={plan.scale}
-              roomW={plan.roomW} roomH={plan.roomH} wall={plan.wall} floor={floor} line={wallColor} />
+              widthM={safeW} roomW={plan.roomW} roomH={plan.roomH} wall={plan.wall} floor={floor} line={wallColor} />
           ))}
           {windows.map((win) => (
             <OpeningMark key={`window-${win.id}`} opening={win} kind="window" scale={plan.scale}
-              roomW={plan.roomW} roomH={plan.roomH} wall={plan.wall} floor={floor} line={wallColor} />
+              widthM={safeW} roomW={plan.roomW} roomH={plan.roomH} wall={plan.wall} floor={floor} line={wallColor} />
           ))}
 
           {solidCount === 0 ? (

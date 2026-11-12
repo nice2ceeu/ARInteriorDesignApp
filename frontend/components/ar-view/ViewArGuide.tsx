@@ -77,13 +77,13 @@ export function ViewArGuide({ viewOnly, onClose }: ViewArGuideProps) {
           {(viewOnly ? VIEW_ONLY_STEPS : EDIT_STEPS).map((step, index) => (
             <View key={step.title} style={styles.step}>
               <View style={[styles.icon, { backgroundColor: colors.accentSoft }]}>
-                <Ionicons name={step.icon} size={20} color={colors.accent} />
+                <Ionicons name={step.icon} size={22} color={colors.accent} />
               </View>
               <View style={styles.stepText}>
                 <Text style={[styles.stepTitle, { color: colors.textPrimary }]}>
                   {index + 1}. {step.title}
                 </Text>
-                <Text style={[styles.stepBody, { color: colors.textMuted }]}>{step.body}</Text>
+                <Text style={[styles.stepBody, { color: colors.textPrimary }]}>{step.body}</Text>
               </View>
             </View>
           ))}
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 1100,
     elevation: 1100,
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
     justifyContent: 'center',
     paddingHorizontal: spacing.md,
   },
@@ -116,7 +116,8 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   title: {
-    fontSize: 20,
+    fontSize: 22,
+    lineHeight: 28,
     fontWeight: '700',
     marginBottom: spacing.md,
   },
@@ -126,12 +127,12 @@ const styles = StyleSheet.create({
   step: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
   },
   icon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -139,13 +140,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   stepTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   stepBody: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 16,
+    lineHeight: 24,
   },
   button: {
     minHeight: 48,
@@ -156,7 +158,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
 });

@@ -1302,7 +1302,11 @@ public class FurniturePlacementController : MonoBehaviour
         instances.Add(placed);
 
         // Push clear of any existing furniture (large sofas need footprint checks, not point clearance alone).
-        var clearPivot = ResolveCollisionFreePivot(placed, placed.transform.position, FindClearSpawnPosition(placed.transform.position));
+        // Not a layout or undo pose: that spot was chosen, and a piece pushed off it sat out of line with
+        // the plan, sometimes half through a wall (adviser, 2026-11-11). An overlap there shows red instead.
+        var clearPivot = model.hasForcedPose
+            ? placed.transform.position
+            : ResolveCollisionFreePivot(placed, placed.transform.position, FindClearSpawnPosition(placed.transform.position));
         if ((clearPivot - placed.transform.position).sqrMagnitude > 1e-6f)
         {
             var clearFloorY = ResolveFloorHeight(clearPivot).y;
@@ -1602,7 +1606,10 @@ public class FurniturePlacementController : MonoBehaviour
         // Below the scanned floor on a large surface: that is the floor, and the scan's floor point
         // was set too high (a bed floated 27 cm up, 2026-10-30). Nothing stands below the floor, so
         // only a lower reading overrules the scan; a higher one may be the top of other furniture.
-        var lowerFloor = liveY < scanY && IsLargeFloorAt(liveY);
+        // Only a little lower, though: a scanned floor that was too high was 27 cm out. A surface 56 cm
+        // below it sank a sofa into the floor (Redmi, 2026-11-12): ARCore's planes from before the
+        // planner don't always line up again.
+        var lowerFloor = liveY < scanY && scanY - liveY <= MaxLowerFloorDrop && IsLargeFloorAt(liveY);
         // Seating runs every frame of a drag: one line now and then is enough.
         if (Time.unscaledTime >= nextFloorNoteAt)
         {
@@ -1616,6 +1623,8 @@ public class FurniturePlacementController : MonoBehaviour
 
     /// <summary>Smallest surface (m²) that counts as the floor when it is below the scanned floor.</summary>
     const float LargeFloorArea = 0.5f;
+    /// <summary>Furthest (m) a surface below the scanned floor can be and still be taken as the floor.</summary>
+    const float MaxLowerFloorDrop = 0.35f;
 
     /// <summary>A large tracked upward surface lies at <paramref name="y"/> (within 5 cm).</summary>
     bool IsLargeFloorAt(float y)

@@ -6,10 +6,12 @@
  * so it can be written to a file as a UTF-8 string.
  *
  * Positions use the planner's room-local frame: x along the room width, z along its
- * length, localPosition is the min corner of the item's rotated footprint.
+ * length, localPosition is the min corner of the item's rotated footprint. The plan is
+ * drawn the way round the room really is (utils/planView), not its mirror image.
  */
 
 import { designItemColor } from '@/utils/designItemColors';
+import { planFootprint } from '@/utils/planView';
 import type { CustomizedLayoutItem } from '@/types/design-flow';
 
 export interface FloorPlanPdfInput {
@@ -113,17 +115,17 @@ class PageCanvas {
   }
 }
 
-function toPlanItems(items: CustomizedLayoutItem[]): PlanItem[] {
+function toPlanItems(items: CustomizedLayoutItem[], roomWidth: number): PlanItem[] {
   return items.map((item, index) => {
-    // Quarter turns swap the footprint, matching FloorPlanPreview.
-    const turned = Math.abs(Math.round((item.rotationY ?? 0) / 90)) % 2 === 1;
+    // Quarter turns swap the footprint, matching FloorPlanPreview and AR.
+    const foot = planFootprint({ ...item, rotationY: item.rotationY ?? 0 }, roomWidth);
     return {
       number: index + 1,
       name: item.displayName,
-      left: item.localPosition.x,
-      top: item.localPosition.z,
-      width: turned ? item.depth : item.width,
-      length: turned ? item.width : item.depth,
+      left: foot.left,
+      top: foot.top,
+      width: foot.width,
+      length: foot.depth,
       height: item.height,
       color: hexToRgb(item.tintHex || designItemColor(index, item.category, item.role)),
       pricePhp: Number(item.pricePhp) || 0,
@@ -277,7 +279,7 @@ function assemblePdf(pageContents: string[]): string {
 }
 
 export function buildFloorPlanPdf(input: FloorPlanPdfInput): string {
-  const items = toPlanItems(input.items);
+  const items = toPlanItems(input.items, input.room.width);
   const generatedAt = (input.generatedAt ?? new Date()).toISOString().slice(0, 10);
   const subtitle = [input.roomType, input.style, generatedAt].filter(Boolean).join('  |  ');
 

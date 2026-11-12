@@ -267,6 +267,17 @@ export default function DesignPreferencesScreen() {
     setGenerating(true);
     setError(null);
     try {
+      // No scan picked: the scan may still have been saved after the app stopped waiting for it
+      // (slow server, 2026-11-12). Without it the layout ignores the room's shape and AR has to be
+      // lined up by hand.
+      let scanId = measurementId;
+      if (!scanId && projectId) {
+        const list = await RoomMeasurementService.getAll(projectId).catch(() => []);
+        if (list[0]) {
+          scanId = list[0].id;
+          setMeasurementId(scanId);
+        }
+      }
       const selected = requiredOptions.filter((item) => requiredIds.includes(item.id));
       const result = await DesignFlowService.generateLayouts(
         {
@@ -278,7 +289,7 @@ export default function DesignPreferencesScreen() {
           notes: notes.trim() || undefined,
         },
         { width: roomWidth, length: roomDepth, height: roomHeight },
-        { measurementId, projectId },
+        { measurementId: scanId, projectId },
       );
       await saveDesignGeneration(result);
       router.push({

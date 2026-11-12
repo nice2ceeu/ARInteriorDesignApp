@@ -171,6 +171,17 @@ public class ARDesignScanHUD : MonoBehaviour
 
     RectTransform mapPanel;
     ARScanMiniMap map;
+
+    /// <summary>The world direction (x, z) that is up on the mini map / Review floor plan.</summary>
+    public bool TryGetMapUp(out Vector2 up)
+    {
+        up = default;
+        if (map == null || !mapFacing) return false;
+        var angle = map.Frame.Angle;
+        // The map turns floor-plan points by Angle (counter-clockwise); map-up (0, 1) comes from here.
+        up = new Vector2(Mathf.Sin(angle), Mathf.Cos(angle));
+        return true;
+    }
     bool mapExpanded;
     bool mapUserToggled;
     bool mapFacing;

@@ -9,23 +9,6 @@ import type {
   DesignProposalV2,
 } from '@/types/design-flow';
 
-let viewOnlyRequested = false;
-
-/**
- * Final design is asking the AR screen underneath it (still open from Finish) to switch to view-only
- * when it comes back: a second AR screen would share the one Unity player with the first.
- */
-export function requestArViewOnly(): void {
-  viewOnlyRequested = true;
-}
-
-/** True once after {@link requestArViewOnly}. */
-export function takeArViewOnlyRequest(): boolean {
-  const requested = viewOnlyRequested;
-  viewOnlyRequested = false;
-  return requested;
-}
-
 /** Same place to within this (m) and angle (degrees): AR's round trip isn't exact to the millimetre. */
 const SAME_POSITION_M = 0.02;
 const SAME_ANGLE_DEG = 1;

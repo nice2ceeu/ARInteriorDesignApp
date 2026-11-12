@@ -57,7 +57,28 @@ public static class RoomMeasurementPayloadBuilder
 
         payload.floorPolygon = BuildPolygon(scanController.FloorPolygon);
         ApplyRoomModel(payload, scanController.FloorPolygon, dims.height);
+        ApplyViewUp(payload);
         return payload;
+    }
+
+    /// <summary>Which way was up on the Review map (or the way the camera faced, without a map).</summary>
+    static void ApplyViewUp(RoomConfirmedPayload payload)
+    {
+        var hud = Object.FindFirstObjectByType<ARDesignScanHUD>();
+        Vector2 up;
+        if (hud == null || !hud.TryGetMapUp(out up))
+        {
+            var cam = Camera.main;
+            if (cam == null) return;
+            var forward = cam.transform.forward;
+            up = new Vector2(forward.x, forward.z);
+        }
+
+        if (up.sqrMagnitude < 1e-6f) return;
+        up.Normalize();
+        payload.hasViewUp = true;
+        payload.viewUpX = up.x;
+        payload.viewUpZ = up.y;
     }
 
     static void ApplyRoomModel(RoomConfirmedPayload payload, IReadOnlyList<Vector3> polygon, float height)

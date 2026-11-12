@@ -401,6 +401,8 @@ public class ARMeasurementRnBridge : MonoBehaviour
 
         var furniture = GetComponent<ARMeasurementFurnitureBootstrap>();
         furniture?.Placement?.ClearFurniture();
+        // Off until "View in AR" arms it again: left on, it hid the next scan's aim dot.
+        furniture?.SetPlacementActive(false);
 
         var planHud = UnityEngine.Object.FindFirstObjectByType<ARMeasurementPlanHUD>(FindObjectsInactive.Include);
         planHud?.HideForRnSession();

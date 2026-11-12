@@ -25,6 +25,19 @@ public class ARMeasurementFurnitureBootstrap : MonoBehaviour
     public FurnitureLayoutHistory History => history;
 
     /// <summary>
+    /// Furniture placement and its gestures on or off. Unity stays loaded between AR screens now
+    /// (2026-11-12), so placement left on after "View in AR" kept running in the next scan: with no
+    /// piece selected it switched the floor reticle off every frame, and the scan's aim dot was gone.
+    /// </summary>
+    public void SetPlacementActive(bool on)
+    {
+        if (placement == null) placement = GetComponent<FurniturePlacementController>();
+        if (manipulator == null) manipulator = GetComponent<FurnitureManipulator>();
+        if (placement != null) placement.enabled = on;
+        if (manipulator != null) manipulator.enabled = on;
+    }
+
+    /// <summary>
     /// Adds placement / GLB / catalog components if missing, forces planner view,
     /// and wires RN events. Call while still on ARRoomMeasurement with a confirmed room.
     /// </summary>
@@ -46,6 +59,7 @@ public class ARMeasurementFurnitureBootstrap : MonoBehaviour
 
         history = managers.GetComponent<FurnitureLayoutHistory>()
                   ?? managers.AddComponent<FurnitureLayoutHistory>();
+        SetPlacementActive(true);
 
         PlannerRnInputRouter.EnsureOn(managers)?.Rebind();
 

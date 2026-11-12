@@ -92,7 +92,7 @@ export function LayoutAlignmentPanel({
               ]}
             />
           ))}
-          <Text style={[styles.stepLabel, { color: colors.textMuted }]}>
+          <Text style={[styles.stepLabel, { color: colors.textSecondary }]}>
             Corner {alignment.step + 1} of 2
           </Text>
           {sizeNote ? (
@@ -104,7 +104,7 @@ export function LayoutAlignmentPanel({
         <View style={styles.messageRow}>
           {lookingForFloor && !errorText ? <ActivityIndicator size="small" color={colors.accent} /> : null}
           <Text
-            style={[styles.body, { color: errorText ? colors.danger : colors.textSecondary }]}
+            style={[styles.body, { color: errorText ? colors.danger : colors.textPrimary }]}
             numberOfLines={2}
           >
             {message}
@@ -180,16 +180,17 @@ const styles = StyleSheet.create({
   },
   stepLabel: {
     marginLeft: spacing.xs,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
   sizeNote: {
     marginLeft: 'auto',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
   },
   title: {
-    fontSize: 16,
+    fontSize: 18,
+    lineHeight: 24,
     fontWeight: '700',
   },
   messageRow: {
@@ -200,8 +201,8 @@ const styles = StyleSheet.create({
   },
   body: {
     flexShrink: 1,
-    fontSize: 13,
-    lineHeight: 18,
+    fontSize: 15,
+    lineHeight: 21,
   },
   actions: {
     flexDirection: 'row',

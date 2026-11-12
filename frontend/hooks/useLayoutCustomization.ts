@@ -121,10 +121,20 @@ export function useLayoutCustomization({
               || resolveCatalogForLayoutItem(item, catalogItems)?.id === piece.modelId,
           );
           const scale = piece.scale > 0 ? piece.scale : 1;
-          // Unity's `dimensions` already include the scale; catalog sizes are true scale.
-          const width = catalog ? catalog.dimensions.width * scale : piece.dimensions.x;
-          const height = catalog ? catalog.dimensions.height * scale : piece.dimensions.y;
-          const depth = catalog ? catalog.dimensions.length * scale : piece.dimensions.z;
+          // The size the layout was planned with (the 3D model's own size), not the store's listed
+          // size: a set listed 1.07 × 0.66 m whose model is 2.41 × 1.64 m came back from AR small
+          // and 0.7 m out of place (2026-11-12). A piece swapped in AR has no planned size, so it
+          // takes the size AR measured. Unity's `dimensions` already include the scale.
+          const planned = original && original.furnitureId === piece.modelId ? original : undefined;
+          const measured = piece.dimensions && piece.dimensions.x > 0.01 && piece.dimensions.z > 0.01
+            ? piece.dimensions
+            : undefined;
+          const width = planned ? planned.width * scale
+            : measured ? measured.x : (catalog?.dimensions.width ?? 1) * scale;
+          const height = planned ? planned.height * scale
+            : measured ? measured.y : (catalog?.dimensions.height ?? 1) * scale;
+          const depth = planned ? planned.depth * scale
+            : measured ? measured.z : (catalog?.dimensions.length ?? 1) * scale;
           const rotationY = normalizeYaw(piece.sourceRotationY ?? piece.rotationY);
           const source = piece.sourcePosition!;
           const local = unityToRoomLocal(source, rotationY, { width, depth }, room);

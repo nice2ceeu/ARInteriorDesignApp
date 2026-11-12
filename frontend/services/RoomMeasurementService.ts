@@ -16,6 +16,10 @@ export class RoomMeasurementService {
     const response = await callApi<RoomMeasurementResponse>('/room-measurements', {
       method: 'POST',
       body: input,
+      // A scan is too much work to lose to a slow server: at the 15 s default the app gave up on a
+      // save the server finished a minute later, and the design went ahead without the room
+      // (2026-11-12).
+      timeoutMs: 60000,
     });
     return response.measurement;
   }

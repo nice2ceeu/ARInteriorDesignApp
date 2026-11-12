@@ -318,7 +318,14 @@ public class ARDesignLayoutAlignmentController : MonoBehaviour
 
         var yawDelta = YawOf(dirW) - YawOf(dirL);
         var rotation = Quaternion.Euler(0f, yawDelta, 0f);
-        var m = Matrix4x4.TRS(a, rotation, Vector3.one) * Matrix4x4.Translate(-l0);
+        // Middle on middle: the plan wall and the marked wall are rarely the same length (3.40 m
+        // planned, 3.22 m marked on the Redmi, 2026-11-12), and pinning the plan's corner on the
+        // first mark put all of the difference at the far end.
+        var midW = (a + b) * 0.5f;
+        midW.y = a.y;
+        var midL = (l0 + l1) * 0.5f;
+        midL.y = l0.y;
+        var m = Matrix4x4.TRS(midW, rotation, Vector3.one) * Matrix4x4.Translate(-midL);
 
         var corners = new Vector3[poly.Count];
         for (var i = 0; i < poly.Count; i++)

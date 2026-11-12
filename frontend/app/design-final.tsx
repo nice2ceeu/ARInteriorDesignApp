@@ -34,7 +34,7 @@ import {
 import { firstParam, formatPhp } from '@/utils/designFlowFormat';
 import { exportFloorPlanPdf } from '@/utils/floorPlanExport';
 import { resolveAvailableColorHex } from '@/utils/furnitureCatalogHelpers';
-import { generationForSavedLayout, layoutEdited, requestArViewOnly } from '@/utils/savedDesignAr';
+import { generationForSavedLayout, layoutEdited } from '@/utils/savedDesignAr';
 import type {
   CustomizedDesignLayout,
   CustomizedLayoutItem,
@@ -229,11 +229,14 @@ export default function DesignFinalScreen() {
     }
   }, [generation?.preferences, layout, router, saving, title]);
 
-  /** Shows this design in AR as saved, to look at only (client request, 2026-11-04). */
+  /**
+   * Opens this design in AR as saved (client request, 2026-11-04), where pieces can be moved again
+   * (adviser, 2026-11-11). Finish brings the changes back here to save.
+   */
   const handleViewAr = useCallback(async () => {
     if (!layout || !generation || openingAr) return;
     if (fromAr && router.canGoBack()) {
-      requestArViewOnly();
+      // The AR screen this came from is still open underneath, with the same pieces.
       router.back();
       return;
     }
@@ -246,7 +249,6 @@ export default function DesignFinalScreen() {
           projectId: generation.projectId || firstParam(params.projectId) || '',
           flow: 'design',
           applyLayout: '1',
-          viewOnly: '1',
           proposalId: layout.proposalId,
           measurementId: generation.measurementId || '',
         },
@@ -427,7 +429,7 @@ export default function DesignFinalScreen() {
                 disabled={openingAr}
                 style={[styles.secondaryBtn, styles.exportBtn, { borderColor: colors.accent, opacity: openingAr ? 0.7 : 1 }]}
                 accessibilityRole="button"
-                accessibilityLabel="View this design in AR"
+                accessibilityLabel="View and change this design in AR"
               >
                 {openingAr ? (
                   <ActivityIndicator color={colors.accent} />

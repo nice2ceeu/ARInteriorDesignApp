@@ -72,16 +72,19 @@ public class ARFurnitureCocoDetector : MonoBehaviour
     [SerializeField] private float openImagesScoreThreshold = 0.2f;
     [SerializeField] private float openImagesFurnitureConfidence = 0.25f;
     [Tooltip("Pause after a detection before the next one. Each detection runs a few layers a frame, slowing " +
-             "down when frames get slow, so the walk stays smooth. 4 s missed chairs walked past (client, 2026-10-29).")]
-    [SerializeField] private float scanIntervalSeconds = 2.5f;
+             "down when frames get slow, so the walk stays smooth. 4 s missed chairs walked past (client, 2026-10-29); " +
+             "2.5 s still felt slow (client, 2026-11-12): the camera held 30 fps between detections.")]
+    [SerializeField] private float scanIntervalSeconds = 1f;
     [Tooltip("Without depth, furniture further than this (m) isn't placed: the floor ray is too unsure there.")]
     [SerializeField] private float maxFloorRayDistance = 3.5f;
     [Tooltip("A new frame is only captured while the phone turns slower than this (degrees per second).")]
     [SerializeField] private float maxTurnDegreesPerSecond = 35f;
     [Tooltip("…and moves slower than this (metres per second). Steady frames are sharper too.")]
     [SerializeField] private float maxMoveMetresPerSecond = 0.4f;
-    [Tooltip("Model layers sent to the GPU per frame. Fewer spreads a detection over more frames, so the camera doesn't stutter.")]
-    [SerializeField] private int maxLayersPerFrame = 4;
+    [Tooltip("Most model layers sent to the GPU per frame. Fewer spreads a detection over more frames, so the camera " +
+             "doesn't stutter; the budget backs off by itself when frames get slow (LayersThisFrame). At 4 a detection " +
+             "took 2-3 s on the Realme with frames still at 30 fps (2026-11-12).")]
+    [SerializeField] private int maxLayersPerFrame = 8;
 
     // Padding colour around the letterboxed frame, as in YOLO training (114/255 grey).
     static readonly Color LetterboxGrey = new Color(0.447f, 0.447f, 0.447f, 1f);
@@ -543,7 +546,7 @@ public class ARFurnitureCocoDetector : MonoBehaviour
             {
                 method = "depth";
             }
-            else if (TryPlaceOnFloor(det.normalizedBox, floorY, out center))
+            else if (TryPlaceOnFloor(det.normalizedBox, floorY, defaultSize.z, out center))
             {
                 // Far away the ray meets the floor at a shallow angle: a little error is metres
                 // (a bed landed 4.5 m from where it was). Leave it for a closer look.
@@ -709,8 +712,13 @@ public class ARFurnitureCocoDetector : MonoBehaviour
         return true;
     }
 
-    /// <summary>Where the bottom-centre of the box meets the floor, using the captured camera pose.</summary>
-    bool TryPlaceOnFloor(Rect box, float floorY, out Vector3 center)
+    /// <summary>
+    /// The object's centre on the floor, from where the bottom-centre of its box meets the floor (the
+    /// captured camera pose). That point is the object's front, the side facing the phone, so the
+    /// centre is half its depth further on: used as the centre, every piece found without depth sat
+    /// a quarter to half a metre too close in the room and on the plan (2026-11-12).
+    /// </summary>
+    bool TryPlaceOnFloor(Rect box, float floorY, float depth, out Vector3 center)
     {
         // A current screen ray would drift if the phone moved during inference.
         var viewportX = Mathf.Clamp01(box.center.x);
@@ -720,6 +728,10 @@ public class ARFurnitureCocoDetector : MonoBehaviour
             + (captureTopLeft - captureBottomLeft) * viewportY;
         if (!TryProjectToFloor(new Ray(captureOrigin, contact - captureOrigin), floorY, out center))
             return false;
+        var away = center - captureOrigin;
+        away.y = 0f;
+        if (away.sqrMagnitude > 1e-6f)
+            center += away.normalized * Mathf.Max(0f, depth) * 0.5f;
         center.y = floorY;
         return true;
     }

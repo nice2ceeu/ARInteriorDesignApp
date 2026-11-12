@@ -4,11 +4,30 @@ using UnityEngine;
 /// <summary>
 /// Placement safety checks for furniture: furniture-furniture footprint overlap
 /// and wall proximity / out-of-room footprint corners.
+/// Footprints are the turned rectangles the pieces really cover. World-axis boxes grew with the
+/// room's angle in AR (a 2.4 x 1.6 m sofa set turned 30 degrees boxed as 2.9 x 2.6 m), so lined-up
+/// layouts went red with room to spare and were pushed off their planned spots (adviser, 2026-11-11).
 /// </summary>
 public static class FurniturePlacementSafety
 {
     public const float MinFurnitureClearanceMetres = 0.02f;
+    /// <summary>
+    /// Pieces count as overlapping only when they cover the same floor by more than this. Layouts put
+    /// pieces side by side, touching (a sofa set and an accent chair 0.4 cm apart, or 1 mm into
+    /// each other), and those went red and blocked Finish (adviser, 2026-11-11). Box sizes come from
+    /// the models' outer bounds, so touching boxes are not furniture inside furniture.
+    /// </summary>
+    public const float OverlapToleranceMetres = 0.015f;
+    /// <summary>
+    /// Closer than this to a wall is reported, but is not unsafe: sofas, beds and cabinets stand
+    /// against walls, and layouts put them 5 cm off (they all went red at this 15 cm rule).
+    /// </summary>
     public const float MinWallClearanceMetres = 0.15f;
+    /// <summary>
+    /// A corner counts as through the wall only past this: lining up a room by two taps is good to a
+    /// few centimetres, and a piece the layout put 5 cm off the wall shouldn't block Finish for it.
+    /// </summary>
+    public const float WallCollisionToleranceMetres = 0.05f;
 
     public struct Result
     {
@@ -58,7 +77,7 @@ public static class FurniturePlacementSafety
         var result = Result.Safe();
         if (target == null) return result;
 
-        var targetRect = GetFootprintRectXZAt(target, worldPivot);
+        var targetQuad = FootprintQuadXZ(target, worldPivot);
 
         var nearestFurniture = float.PositiveInfinity;
         if (others != null)
@@ -70,11 +89,10 @@ public static class FurniturePlacementSafety
                 if (other.InstanceId == target.InstanceId) continue;
                 if (!other.gameObject.activeInHierarchy) continue;
 
-                var otherRect = GetFootprintRectXZ(other);
-                var separation = RectSeparationXZ(targetRect, otherRect);
-                nearestFurniture = Mathf.Min(nearestFurniture, separation);
+                var gap = GapXZ(targetQuad, FootprintQuadXZ(other, other.transform.position), out _);
+                nearestFurniture = Mathf.Min(nearestFurniture, Mathf.Max(0f, gap));
 
-                if (RectsOverlapXZ(targetRect, otherRect, MinFurnitureClearanceMetres))
+                if (CountsAsOverlap(gap))
                 {
                     if (!result.hasFurnitureCollision)
                         result.otherModelId = other.ModelId;
@@ -92,10 +110,14 @@ public static class FurniturePlacementSafety
         {
             foreach (var corner in GetWorldFootprintCornersAt(target, worldPivot))
             {
-                if (!room.IsInsideRoom(corner))
-                    outside = true;
-
                 var edgeDist = room.DistanceToFloorBoundaryXZ(corner);
+                if (!room.IsInsideRoom(corner))
+                {
+                    if (edgeDist > WallCollisionToleranceMetres)
+                        outside = true;
+                    edgeDist = 0f;
+                }
+
                 if (edgeDist < nearestWall)
                     nearestWall = edgeDist;
             }
@@ -119,8 +141,8 @@ public static class FurniturePlacementSafety
         }
         else if (result.isTooCloseToWall)
         {
-            result.isSafe = false;
-            result.reason = "Too close to the wall";
+            // Reported only: see MinWallClearanceMetres.
+            result.reason = "Close to the wall";
         }
 
         return result;
@@ -150,8 +172,7 @@ public static class FurniturePlacementSafety
                 return resolved;
 
             var push = Vector3.zero;
-            var myRect = GetFootprintRectXZAt(target, resolved);
-            var myCenter = new Vector3(myRect.center.x, 0f, myRect.center.y);
+            var myQuad = FootprintQuadXZ(target, resolved);
 
             for (var i = 0; i < others.Count; i++)
             {
@@ -160,20 +181,13 @@ public static class FurniturePlacementSafety
                 if (other.InstanceId == target.InstanceId) continue;
                 if (!other.gameObject.activeInHierarchy) continue;
 
-                var otherRect = GetFootprintRectXZ(other);
-                if (!RectsOverlapXZ(myRect, otherRect, MinFurnitureClearanceMetres))
+                var gap = GapXZ(myQuad, FootprintQuadXZ(other, other.transform.position), out var away);
+                if (!TooCloseXZ(gap))
                     continue;
 
-                var otherCenter = new Vector3(otherRect.center.x, 0f, otherRect.center.y);
-                var dir = myCenter - otherCenter;
-                dir.y = 0f;
-                if (dir.sqrMagnitude < 1e-8f)
-                    dir = new Vector3(1f, 0f, 0f);
-                else
-                    dir.Normalize();
-
-                var penetration = RectPenetrationDepthXZ(myRect, otherRect);
-                push += dir * (penetration + MinFurnitureClearanceMetres + 0.02f);
+                // Out along the side they overlap least on.
+                var penetration = Mathf.Max(0f, -gap);
+                push += new Vector3(away.x, 0f, away.y) * (penetration + MinFurnitureClearanceMetres + 0.02f);
             }
 
             if (push.sqrMagnitude < 1e-8f)
@@ -262,38 +276,67 @@ public static class FurniturePlacementSafety
         };
     }
 
-    static bool RectsOverlapXZ(Rect a, Rect b, float clearance)
+    /// <summary>Within the furniture clearance (or overlapping), given a <see cref="GapXZ"/>.</summary>
+    static bool TooCloseXZ(float gap) => gap < MinFurnitureClearanceMetres * 0.5f;
+
+    /// <summary>Unsafe overlap, given a <see cref="GapXZ"/> (see <see cref="OverlapToleranceMetres"/>).
+    /// Dragging still keeps pieces a centimetre apart (<see cref="TooCloseXZ"/>).</summary>
+    public static bool CountsAsOverlap(float gap) => gap < -OverlapToleranceMetres;
+
+    /// <summary>The footprint's four corners on the floor (x, z), in order around it.</summary>
+    static Vector2[] FootprintQuadXZ(PlacedFurniture furniture, Vector3 worldPivot)
     {
-        // Expand each rect by half clearance so "almost touching" still warns.
-        var pad = clearance * 0.5f;
-        a.xMin -= pad;
-        a.xMax += pad;
-        a.yMin -= pad;
-        a.yMax += pad;
-        return a.Overlaps(b);
+        var corners = GetWorldFootprintCornersAt(furniture, worldPivot);
+        var quad = new Vector2[corners.Length];
+        for (var i = 0; i < corners.Length; i++)
+            quad[i] = new Vector2(corners[i].x, corners[i].z);
+        return quad;
     }
 
-    static float RectPenetrationDepthXZ(Rect a, Rect b)
+    /// <summary>
+    /// Gap between two convex footprints (separating axis test): positive when apart (never more
+    /// than the true distance), negative when overlapping, by how far. <paramref name="away"/> is the
+    /// axis that separates them best, pointing from <paramref name="b"/> towards <paramref name="a"/>.
+    /// </summary>
+    public static float GapXZ(Vector2[] a, Vector2[] b, out Vector2 away)
     {
-        var overlapX = Mathf.Min(a.xMax, b.xMax) - Mathf.Max(a.xMin, b.xMin);
-        var overlapZ = Mathf.Min(a.yMax, b.yMax) - Mathf.Max(a.yMin, b.yMin);
-        if (overlapX <= 0f || overlapZ <= 0f) return 0f;
-        return Mathf.Min(overlapX, overlapZ);
+        var best = float.NegativeInfinity;
+        away = Vector2.right;
+        var found = false;
+        for (var pass = 0; pass < 2; pass++)
+        {
+            var poly = pass == 0 ? a : b;
+            for (var i = 0; i < poly.Length; i++)
+            {
+                var edge = poly[(i + 1) % poly.Length] - poly[i];
+                if (edge.sqrMagnitude < 1e-10f) continue;
+                var axis = new Vector2(-edge.y, edge.x).normalized;
+
+                Project(a, axis, out var minA, out var maxA);
+                Project(b, axis, out var minB, out var maxB);
+                var gapAhead = minA - maxB;  // a beyond b along +axis
+                var gapBehind = minB - maxA; // a before b
+                var gap = Mathf.Max(gapAhead, gapBehind);
+                if (found && gap <= best) continue;
+
+                best = gap;
+                found = true;
+                away = gapAhead >= gapBehind ? axis : -axis;
+            }
+        }
+
+        return found ? best : float.PositiveInfinity;
     }
 
-    static float RectSeparationXZ(Rect a, Rect b)
+    static void Project(Vector2[] poly, Vector2 axis, out float min, out float max)
     {
-        var dx = 0f;
-        if (a.xMax < b.xMin) dx = b.xMin - a.xMax;
-        else if (b.xMax < a.xMin) dx = a.xMin - b.xMax;
-
-        var dz = 0f;
-        if (a.yMax < b.yMin) dz = b.yMin - a.yMax;
-        else if (b.yMax < a.yMin) dz = a.yMin - b.yMax;
-
-        if (dx == 0f && dz == 0f) return 0f;
-        if (dx == 0f) return dz;
-        if (dz == 0f) return dx;
-        return Mathf.Sqrt(dx * dx + dz * dz);
+        min = float.PositiveInfinity;
+        max = float.NegativeInfinity;
+        for (var i = 0; i < poly.Length; i++)
+        {
+            var d = Vector2.Dot(poly[i], axis);
+            if (d < min) min = d;
+            if (d > max) max = d;
+        }
     }
 }

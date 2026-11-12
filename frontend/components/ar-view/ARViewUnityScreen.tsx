@@ -55,7 +55,6 @@ import { RoomMeasurementService } from '@/services/RoomMeasurementService';
 import { projectService } from '@/services/ProjectService';
 import { buildApplyLayoutRequest } from '@/services/DesignFlowService';
 import { loadDesignGeneration } from '@/utils/designFlowStorage';
-import { takeArViewOnlyRequest } from '@/utils/savedDesignAr';
 import { getJson, setJson } from '@/utils/storage';
 import type { DesignFlowGenerationResult, DesignProposalV2 } from '@/types/design-flow';
 import { colors, spacing } from '@/components/ui/theme';
@@ -154,11 +153,9 @@ export function ARViewUnityScreen() {
   const isApplyLayoutFlow = isDesignFlow && applyLayoutParam === '1';
   const viewOnlyParam = Array.isArray(params.viewOnly) ? params.viewOnly[0] : params.viewOnly;
   /** Looking at a saved design: no editing controls, every piece locked, nothing saved. */
-  const [viewOnly, setViewOnly] = useState(isApplyLayoutFlow && viewOnlyParam === '1');
+  const [viewOnly] = useState(isApplyLayoutFlow && viewOnlyParam === '1');
   const viewOnlyRef = useRef(viewOnly);
   viewOnlyRef.current = viewOnly;
-  /** Final design asked this open AR screen to go view-only: back returns there, not further. */
-  const backToFinalRef = useRef(false);
   const placedFurnitureRef = useRef<NonNullable<LayoutPayload['furniture']>>([]);
   /** New project — force Unity scene sync (player stays warm across visits). */
   const arSessionKey = activeProjectId ?? '';
@@ -1482,10 +1479,6 @@ export function ARViewUnityScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (takeArViewOnlyRequest()) {
-        backToFinalRef.current = true;
-        setViewOnly(true);
-      }
       if (!unityAvailable || !mountUnity) return;
       try {
         unityRef.current?.resumeUnityPlayer?.();
@@ -1521,22 +1514,13 @@ export function ARViewUnityScreen() {
 
   const handleBack = useCallback(() => {
     if (closingRef.current) return;
-    if (backToFinalRef.current) {
-      // Final design was on top of this screen: it goes back on top, and AR stays open under it.
-      const gen = applyGenerationRef.current;
-      router.push({
-        pathname: '/design-final',
-        params: { sessionId: gen?.sessionId || '', projectId: gen?.projectId || activeProjectId || '', fromAr: '1' },
-      });
-      return;
-    }
     // Nothing to lose when only looking: no "Exit?" question.
     if (viewOnlyRef.current) {
       exitAr();
       return;
     }
     setExitConfirmVisible(true);
-  }, [activeProjectId, exitAr, router]);
+  }, [exitAr]);
 
   if (Platform.OS === 'web') {
     return null;
@@ -1770,10 +1754,8 @@ export function ARViewUnityScreen() {
           onUndo={() => unityRef.current?.undo()}
           onRedo={() => unityRef.current?.redo()}
           onClear={handleClear}
-          onExport={() => {
-            void handleExportMeasure();
-          }}
-          exportDisabled={exportingMeasure}
+          // No Export button at the top right (client, 2026-11-12): it was tapped by accident, and
+          // saving goes through Finish.
           onSavePhoto={handleSavePhoto}
           savingPhoto={savingPhoto}
           onRemoveSelected={() => unityRef.current?.removeSelectedFurniture()}

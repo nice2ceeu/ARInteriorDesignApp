@@ -201,6 +201,14 @@ public class RoomConfirmedPayload
     public RoomPolygonPayload floorPolygon;
     /// <summary>True when the scene skipped real measurement (synthetic open floor).</summary>
     public bool furniturePlacementOnly;
+    /// <summary>
+    /// The world direction (x, z) that was up on the scan's Review map, so the app's floor plan can be
+    /// turned the same way. Without it the plan was drawn from whichever side its longest wall gave,
+    /// and looked turned against the room the user had just scanned (2026-11-12).
+    /// </summary>
+    public bool hasViewUp;
+    public float viewUpX;
+    public float viewUpZ;
 
     /// <summary>World-space floor height in metres.</summary>
     public float floorY;

@@ -561,7 +561,12 @@ public class RoomScanController : MonoBehaviour
             var b = ConfirmedRoom.bounds;
             var dx = Mathf.Min(worldPoint.x - b.min.x, b.max.x - worldPoint.x);
             var dz = Mathf.Min(worldPoint.z - b.min.z, b.max.z - worldPoint.z);
-            return Mathf.Max(0f, Mathf.Min(dx, dz));
+            if (dx >= 0f && dz >= 0f)
+                return Mathf.Min(dx, dz);
+            // Outside: how far out (the placement check lets a few centimetres through).
+            var outX = Mathf.Max(0f, -dx);
+            var outZ = Mathf.Max(0f, -dz);
+            return Mathf.Sqrt(outX * outX + outZ * outZ);
         }
 
         var point = new Vector3(worldPoint.x, 0f, worldPoint.z);

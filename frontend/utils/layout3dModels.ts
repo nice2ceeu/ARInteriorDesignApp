@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { furnitureModelLoader } from '@/services/FurnitureModelLoader';
 import { fitModelToDimensions } from '@/utils/arModelEnhancer';
 import type { Layout3DFurnitureItem } from '@/types/layout-3d';
+import { threePose } from '@/utils/planView';
 
 /** One download per model while the 3D layout is open; pieces using the same product share it. */
 const modelCache = new Map<string, Promise<THREE.Object3D | null>>();
@@ -51,8 +52,10 @@ export async function loadPlacedModel(item: Layout3DFurnitureItem): Promise<THRE
 
   const placed = new THREE.Group();
   placed.add(model);
-  placed.position.set(item.position?.x || 0, 0, item.position?.z || 0);
-  placed.rotation.y = ((item.position?.rotation || 0) * Math.PI) / 180;
+  // AR's pose in this right-handed scene, so it isn't the room's mirror image (utils/planView).
+  const pose = threePose({ x: item.position?.x || 0, z: item.position?.z || 0, rotation: item.position?.rotation });
+  placed.position.set(pose.x, 0, pose.z);
+  placed.rotation.y = pose.rotationY;
   placed.userData.furnitureId = item.id;
   placed.userData.isFurnitureModel = true;
   return placed;
