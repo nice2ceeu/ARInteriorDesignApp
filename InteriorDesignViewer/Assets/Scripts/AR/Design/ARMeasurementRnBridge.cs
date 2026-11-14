@@ -20,6 +20,8 @@ public class ARMeasurementRnBridge : MonoBehaviour
     /// <summary>A repeat open this soon after a scan started is answered without restarting it.</summary>
     const float DuplicateOpenSeconds = 3f;
     float lastScanStartedAt = -100f;
+    /// <summary>False until this scene's Start; the freshly loaded scene starts its own scan there.</summary>
+    bool started;
 
     /// <summary>RN design-flow "View in AR" — room shell from saved dimensions, no scan UI.</summary>
     public static string PendingDesignLayoutPayload;
@@ -53,6 +55,7 @@ public class ARMeasurementRnBridge : MonoBehaviour
     {
         // A freshly loaded scene starts its own scan; RN's first open shouldn't restart it.
         lastScanStartedAt = Time.unscaledTime;
+        started = true;
         UnityMessageBridge.SendToApp("unityReady", MeasurementSceneName);
         if (HasPendingDesignLayout)
             StartCoroutine(DesignLayoutAfterSceneLoadRoutine());
@@ -400,7 +403,8 @@ public class ARMeasurementRnBridge : MonoBehaviour
         GetComponent<ARDesignLayoutAlignmentController>()?.ResetSession();
 
         var furniture = GetComponent<ARMeasurementFurnitureBootstrap>();
-        furniture?.Placement?.ClearFurniture();
+        // Both views' pieces, and any model still downloading: Unity stays loaded into the next session.
+        furniture?.Placement?.ClearFurniture(allSpaces: true);
         // Off until "View in AR" arms it again: left on, it hid the next scan's aim dot.
         furniture?.SetPlacementActive(false);
 
@@ -428,6 +432,15 @@ public class ARMeasurementRnBridge : MonoBehaviour
 
     void ScheduleReload()
     {
+        // Opens queued while Unity loaded arrive before this scene's Start, which starts the scan
+        // anyway. Taken as a reopen they restarted the scan and reset AR tracking right after
+        // launch, and the camera came up "stuck in Ready" (Redmi and Realme, 2026-11-11/12).
+        if (!started && !HasPendingDesignLayout)
+        {
+            Debug.Log("[ARMeasurementRnBridge] Scene still starting (it starts its own scan) — ignoring an early open.");
+            return;
+        }
+
         // A repeat "open" right after a fresh start (RN retries, ping races) would restart the
         // scan — and reset tracking — again for nothing: answer it and keep the scan running.
         // A reload already on its way covers this open too (several opens can arrive together

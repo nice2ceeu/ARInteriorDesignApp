@@ -50,6 +50,7 @@ public static class SpatialMappingRegressionChecks
         FurnitureMatchChecks.Run();
         ScanFloorCorrectionChecks.Run();
         FurnitureFootprintChecks.Run();
+        LayoutAlignmentChecks.Run();
         AutoOpeningChecks.Run();
         ScanUxChecks.RunFromMenu();
         AutoOpeningChecks.RunDetectorOnTestPhotos();

@@ -131,6 +131,15 @@ public class FurniturePlacementController : MonoBehaviour
     PendingModel pending;
     int nextInstanceIndex = 1;
     int activeGlbLoads;
+    /// <summary>
+    /// Goes up whenever the pieces are cleared. A model still downloading from before then is
+    /// dropped when it arrives: after New AI, or after leaving AR (Unity stays loaded), late models
+    /// landed on top of the new layout or in the next scan.
+    /// </summary>
+    int spawnGeneration;
+    /// <summary>Every whole-layout move so far (line-up, Turn), so a late model lands where its layout went.</summary>
+    Matrix4x4 layoutShift = Matrix4x4.identity;
+    float layoutShiftYaw;
     Vector2? deferredPlacementTap;
     string lastSafetyKey = string.Empty;
 
@@ -339,9 +348,29 @@ public class FurniturePlacementController : MonoBehaviour
             }
 
             activeGlbLoads++;
+            var generation = spawnGeneration;
+            var shiftAtRequest = layoutShift;
+            var yawAtRequest = layoutShiftYaw;
             gltfLoader.Load(request.glbUrl, (model, error) =>
             {
                 activeGlbLoads = Mathf.Max(0, activeGlbLoads - 1);
+
+                if (generation != spawnGeneration)
+                {
+                    Debug.Log($"[FurniturePlacementController] '{ResolveModelId(request)}' arrived after its layout " +
+                              "was cleared — not placed.");
+                    if (model != null) Destroy(model);
+                    return;
+                }
+
+                // Lined up or turned while it downloaded: move its pose the same way as the placed pieces.
+                if (request.hasPosition && request.position != null)
+                {
+                    var since = layoutShift * shiftAtRequest.inverse;
+                    var p = new Vector3(request.position.x, request.position.y, request.position.z);
+                    request.position = new ARDesignVec3(since.MultiplyPoint3x4(p));
+                    request.rotationY += layoutShiftYaw - yawAtRequest;
+                }
 
                 if (model == null)
                 {
@@ -536,10 +565,15 @@ public class FurniturePlacementController : MonoBehaviour
     }
 
     /// <summary>Destroys placed furniture in the current AR or Plan workspace only.</summary>
-    public void ClearFurniture()
+    /// <param name="allSpaces">
+    /// Also the pieces of the other view (Real room / Plan). Leaving AR needs this: Unity stays
+    /// loaded, so pieces left in the other view came back in the next AR session.
+    /// </param>
+    public void ClearFurniture(bool allSpaces = false)
     {
         Select(null);
         DiscardPending();
+        spawnGeneration++;
 
         var space = CurrentPlacementSpace;
         for (var i = instances.Count - 1; i >= 0; i--)
@@ -551,9 +585,15 @@ public class FurniturePlacementController : MonoBehaviour
                 continue;
             }
 
-            if (instance.PlacementSpace != space) continue;
+            if (!allSpaces && instance.PlacementSpace != space) continue;
             DestroyInstance(instance.gameObject);
             instances.RemoveAt(i);
+        }
+
+        if (allSpaces)
+        {
+            layoutShift = Matrix4x4.identity;
+            layoutShiftYaw = 0f;
         }
 
         LastRemovedSnapshot = null;
@@ -567,6 +607,8 @@ public class FurniturePlacementController : MonoBehaviour
     {
         Select(null);
         DiscardPending();
+        layoutShift = floorTransform * layoutShift;
+        layoutShiftYaw += yawDeltaDegrees;
 
         for (var i = 0; i < instances.Count; i++)
         {

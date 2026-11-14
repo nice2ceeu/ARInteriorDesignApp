@@ -16,6 +16,8 @@ using UnityEngine;
 public static class RnUnityExport
 {
     const string OutputFolder = "frontend/unity/builds/android";
+    /// <summary>Unity starts on this scene (the first one in the export).</summary>
+    public const string StartupScenePath = "Assets/Scenes/ARRoomMeasurement.unity";
 
     [MenuItem("AR Interior/Export Android Library for React Native", false, 29)]
     public static void ExportAndroidMenu()
@@ -39,9 +41,13 @@ public static class RnUnityExport
         if (EditorUserBuildSettings.activeBuildTarget != BuildTarget.Android)
             EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.Android, BuildTarget.Android);
 
+        // The app opens every AR screen on the measuring scene. Starting Unity on ARDesignScene made
+        // each first open after launch load a second scene: a 3.4-5.6 s freeze, then the AR camera
+        // restarted and sat "stuck in Ready" until it was reset (Realme and Redmi, 2026-11-11/12).
         var scenes = EditorBuildSettings.scenes
             .Where(s => s.enabled && !string.IsNullOrEmpty(s.path))
             .Select(s => s.path)
+            .OrderBy(path => path == StartupScenePath ? 0 : 1)
             .ToArray();
         if (scenes.Length == 0)
         {

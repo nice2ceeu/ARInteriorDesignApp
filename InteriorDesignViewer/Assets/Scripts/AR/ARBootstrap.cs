@@ -113,8 +113,22 @@ public class ARBootstrap : MonoBehaviour
         // room), so there are no placed pieces to keep. Skipping the reset after a layout view left
         // the old map in place, often skewed by pauses, and the next scan measured a 3.1 m ceiling.
         if (!isActiveAndEnabled || arSession == null) return;
+
+        // The first scan after the app starts has no earlier map to clear: resetting there only
+        // restarted the camera that had just opened (a cold start reset it twice and it came up
+        // "stuck in Ready", 2026-11-11/12).
+        if (!anyScanStarted)
+        {
+            anyScanStarted = true;
+            Debug.Log("[ARBootstrap] First scan since the app started — the AR map is new, no reset.");
+            return;
+        }
+
         StartCoroutine(ResetWhenIdle());
     }
+
+    /// <summary>A scan has started since the app launched (static: Unity scenes reload, the AR map doesn't).</summary>
+    static bool anyScanStarted;
 
     IEnumerator ResetWhenIdle()
     {

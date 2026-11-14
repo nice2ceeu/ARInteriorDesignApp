@@ -244,6 +244,7 @@ public static class ScanPlacement
         lastScanCorners = new Vector3[worldCorners.Count];
         for (var i = 0; i < worldCorners.Count; i++) lastScanCorners[i] = worldCorners[i];
         lastScanEpoch = ARBootstrap.TrackingEpoch;
+        scanFloorOrder = ++floorOrder;
     }
 
     /// <summary>The design flow sent the planner frame with the room (or not).</summary>
@@ -289,13 +290,40 @@ public static class ScanPlacement
     }
 
     /// <summary>
-    /// The floor the last room was scanned on, when that scan is from this tracking session. Only
-    /// ever a measured floor: false before a scan, or after a tracking reset moved everything.
+    /// The user marked two floor corners to line a saved layout up (this tracking session). That
+    /// floor counts like a scanned one: without it a lined-up design had no floor to keep pieces
+    /// on, and a piece took the height of whatever AR found under it, even a bed or table top.
+    /// </summary>
+    public static void RememberMarkedFloor(float floorY)
+    {
+        markedFloorY = floorY;
+        markedFloorEpoch = ARBootstrap.TrackingEpoch;
+        markedFloorOrder = ++floorOrder;
+    }
+
+    static float markedFloorY;
+    static int markedFloorEpoch = -1;
+    static int markedFloorOrder;
+    static int scanFloorOrder;
+    static int floorOrder;
+
+    /// <summary>
+    /// The measured floor of this tracking session: where the last room was scanned, or the corners
+    /// the user marked to line a layout up, whichever came last. Only ever a measured floor: false
+    /// before either, or after a tracking reset moved everything.
     /// </summary>
     public static bool TryGetScanFloorY(out float floorY)
     {
         floorY = 0f;
-        if (lastScanCorners == null || lastScanEpoch != ARBootstrap.TrackingEpoch) return false;
+        var scanValid = lastScanCorners != null && lastScanEpoch == ARBootstrap.TrackingEpoch;
+        var markedValid = markedFloorEpoch == ARBootstrap.TrackingEpoch;
+        if (markedValid && (!scanValid || markedFloorOrder > scanFloorOrder))
+        {
+            floorY = markedFloorY;
+            return true;
+        }
+
+        if (!scanValid) return false;
         floorY = float.PositiveInfinity;
         foreach (var c in lastScanCorners) floorY = Mathf.Min(floorY, c.y);
         return !float.IsInfinity(floorY);

@@ -22,7 +22,7 @@ const LINE_UP: Step = {
 const WALK: Step = {
   icon: 'walk-outline',
   title: 'Walk around',
-  body: 'Your furniture appears at its real size. Compare it with your floor plan: if it is on the opposite side of the room, tap Turn. Move slowly so it stays in place.',
+  body: 'Your furniture appears at its real size. Compare it with your floor plan: if it is turned or on the wrong side of the room, tap Turn until it matches. Move slowly so it stays in place.',
 };
 
 const VIEW_ONLY_STEPS: Step[] = [

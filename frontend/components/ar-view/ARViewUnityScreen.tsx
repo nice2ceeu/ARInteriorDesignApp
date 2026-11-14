@@ -1722,7 +1722,7 @@ export function ARViewUnityScreen() {
             ? undefined
             : () => {
                 unityRef.current?.flipLayoutAlignment();
-                showToast('Layout turned around', 2000);
+                showToast('Turned to the next wall', 2000);
               }}
         />
       )}
@@ -1790,7 +1790,7 @@ export function ARViewUnityScreen() {
             ? undefined
             : () => {
                 unityRef.current?.flipLayoutAlignment();
-                showToast('Layout turned around', 2000);
+                showToast('Turned to the next wall', 2000);
               }}
         />
       )}
